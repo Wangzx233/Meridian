@@ -54,10 +54,13 @@ export function RunComposer(props: {
   onReasoningEffortChange: (value: CodexReasoningEffort) => void;
   serviceTier: CodexServiceTier;
   onServiceTierChange: (value: CodexServiceTier) => void;
+  goalMode: boolean;
+  onGoalModeChange: () => void;
   contextCount: number;
   disabled: boolean;
   canInterrupt: boolean;
   canCompact: boolean;
+  canChangeGoal: boolean;
   blockedReason?: string;
   submitting: boolean;
   onSubmit: (event: FormEvent) => void;
@@ -131,6 +134,16 @@ export function RunComposer(props: {
           >
             <Zap size={14} />
             {t("composer.fast")}
+          </button>
+          <button
+            className={`optionToggle ${props.goalMode ? "isSelected" : ""}`}
+            type="button"
+            onClick={props.onGoalModeChange}
+            disabled={!props.canChangeGoal || props.submitting || props.interrupting}
+            title={t("composer.goalTitle")}
+          >
+            <ClipboardList size={14} />
+            {t("composer.goal")}
           </button>
           <button
             className="ghostButton compact"

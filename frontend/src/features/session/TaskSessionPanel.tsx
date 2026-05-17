@@ -148,6 +148,7 @@ export function TaskSessionPanel(props: {
     CodexServiceTier,
     (value: CodexServiceTier) => void,
   ];
+  const [goalMode, setGoalMode] = useState(false);
   const [taskMemory, setTaskMemory] = useState<TaskMemoryDraft>(emptyTaskMemoryDraft());
   const [memoryDetailsOpen, setMemoryDetailsOpen] = useState(false);
   const [memoryDraftRunId, setMemoryDraftRunId] = useState<string | null>(null);
@@ -203,6 +204,7 @@ export function TaskSessionPanel(props: {
   useEffect(() => {
     setSelectedContextIds([]);
     setMode("auto");
+    setGoalMode(false);
     setTaskMemory(emptyTaskMemoryDraft());
     setMemoryDetailsOpen(false);
     setMemoryDraftRunId(null);
@@ -247,6 +249,7 @@ export function TaskSessionPanel(props: {
   const canDraftMemory = canMarkDone && !taskHasActiveRun;
   const hasObservedSession = Boolean(props.task?.codex_session_id || props.runs.some((run) => run.codex_session_id));
   const canCompact = canSend && hasObservedSession;
+  const canChangeGoal = canSend && hasObservedSession;
   const activeWorkspaceTab = visitedWorkbenchProjectId === projectId ? activeWorkbenchTab : "output";
   const mountedWorkspaceTabs = visitedWorkbenchProjectId === projectId ? visitedWorkbenchTabs : ["output"];
 
@@ -273,6 +276,10 @@ export function TaskSessionPanel(props: {
         return;
       }
       submitCompact();
+      return;
+    }
+    if (isGoalCommand(trimmedMessage)) {
+      submitGoalCommand(trimmedMessage);
       return;
     }
     if (!canSend) {
@@ -322,6 +329,10 @@ export function TaskSessionPanel(props: {
       props.onNotice({ tone: "danger", message: t("session.compactAfterActive") });
       return;
     }
+    if (isGoalCommand(trimmedMessage)) {
+      props.onNotice({ tone: "danger", message: t("session.goalAfterActive") });
+      return;
+    }
     if (!canInterrupt) {
       return;
     }
@@ -333,6 +344,45 @@ export function TaskSessionPanel(props: {
       codex_service_tier: serviceTier,
       context_item_ids: selectedContextIds,
     });
+    clearMessageDraft();
+    setSelectedContextIds([]);
+  };
+
+  const submitGoalCommand = (command: string) => {
+    if (!canChangeGoal) {
+      props.onNotice({ tone: "danger", message: t("session.goalRequiresSession") });
+      return;
+    }
+    props.onCreateRun({
+      message: command,
+      mode: "resume",
+      codex_model: codexModel.trim(),
+      codex_reasoning_effort: reasoningEffort,
+      codex_service_tier: serviceTier,
+      raw_command: true,
+      context_item_ids: [],
+    });
+    setGoalMode(command !== "/goal clear");
+    clearMessageDraft();
+    setSelectedContextIds([]);
+  };
+
+  const submitGoalToggle = () => {
+    if (!canChangeGoal || !props.task) {
+      props.onNotice({ tone: "danger", message: t("session.goalRequiresSession") });
+      return;
+    }
+    const nextGoalMode = !goalMode;
+    props.onCreateRun({
+      message: nextGoalMode ? buildGoalCommand(props.task.title, props.task.description) : "/goal clear",
+      mode: "resume",
+      codex_model: codexModel.trim(),
+      codex_reasoning_effort: reasoningEffort,
+      codex_service_tier: serviceTier,
+      raw_command: true,
+      context_item_ids: [],
+    });
+    setGoalMode(nextGoalMode);
     clearMessageDraft();
     setSelectedContextIds([]);
   };
@@ -663,10 +713,13 @@ export function TaskSessionPanel(props: {
               onReasoningEffortChange={setReasoningEffort}
               serviceTier={serviceTier}
               onServiceTierChange={setServiceTier}
+              goalMode={goalMode}
+              onGoalModeChange={submitGoalToggle}
               contextCount={selectedContextIds.length}
               disabled={!canSend || props.creatingRun}
               canInterrupt={canInterrupt}
               canCompact={canCompact}
+              canChangeGoal={canChangeGoal}
               blockedReason={
                 taskHasActiveRun
                   ? t("session.runActive")
@@ -837,6 +890,19 @@ function trimTaskMemoryDraft(memory: TaskMemoryDraft): TaskMemoryDraft {
     source_commit: memory.source_commit?.trim() || undefined,
     stale_conditions: memory.stale_conditions.trim(),
   };
+}
+
+function buildGoalCommand(title: string, description: string) {
+  const parts = [normalizeGoalText(title), normalizeGoalText(description)].filter(Boolean);
+  return `/goal ${parts.join("\n\n") || "Complete the current task."}`;
+}
+
+function normalizeGoalText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function isGoalCommand(message: string) {
+  return message === "/goal" || message.startsWith("/goal ");
 }
 
 function taskMemoryDraftHasDetails(memory: TaskMemoryDraft): boolean {

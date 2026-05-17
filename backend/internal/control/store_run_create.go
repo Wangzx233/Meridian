@@ -85,7 +85,7 @@ func (s *Store) CreateRun(ctx context.Context, in CreateRunInput) (CreateRunResu
 	if err != nil {
 		return CreateRunResult{}, err
 	}
-	if in.RawCommand && (strings.TrimSpace(in.Message) != "/compact" || len(in.ContextItemIDs) > 0) {
+	if in.RawCommand && (!isAllowedRawCodexCommand(strings.TrimSpace(in.Message)) || len(in.ContextItemIDs) > 0) {
 		return CreateRunResult{}, ErrValidation
 	}
 
@@ -254,7 +254,7 @@ func (s *Store) InterruptRun(ctx context.Context, in CreateRunInput, reason stri
 	if err != nil {
 		return InterruptRunResult{}, err
 	}
-	if in.RawCommand && (strings.TrimSpace(in.Message) != "/compact" || len(in.ContextItemIDs) > 0) {
+	if in.RawCommand && (!isAllowedRawCodexCommand(strings.TrimSpace(in.Message)) || len(in.ContextItemIDs) > 0) {
 		return InterruptRunResult{}, ErrValidation
 	}
 	snapshots, err := s.loadContextSnapshots(ctx, tx, task, in.ContextItemIDs)

@@ -73,10 +73,14 @@ func buildRunPrompt(mode string, task Task, message string, items []contextSnaps
 		return buildPrompt(mode, task, message, items), nil
 	}
 	command := strings.TrimSpace(message)
-	if command != "/compact" || mode != RunModeResume || len(items) > 0 {
+	if !isAllowedRawCodexCommand(command) || mode != RunModeResume || len(items) > 0 {
 		return "", ErrValidation
 	}
 	return command, nil
+}
+
+func isAllowedRawCodexCommand(command string) bool {
+	return command == "/compact" || command == "/goal" || strings.HasPrefix(command, "/goal ")
 }
 
 func intString(n int) string {

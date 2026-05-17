@@ -133,13 +133,34 @@ func TestBuildArgvCanPreserveCodexSandbox(t *testing.T) {
 	}
 }
 
-func TestBuildRunPromptAllowsCompactRawCommand(t *testing.T) {
+func TestBuildRunPromptAllowsRawSlashCommands(t *testing.T) {
 	prompt, err := buildRunPrompt(RunModeResume, Task{Title: "Compact"}, " /compact ", nil, true)
 	if err != nil {
 		t.Fatalf("build raw prompt returned error: %v", err)
 	}
 	if prompt != "/compact" {
 		t.Fatalf("raw prompt = %q, want /compact", prompt)
+	}
+	prompt, err = buildRunPrompt(RunModeResume, Task{Title: "Goal"}, " /goal Finish the task ", nil, true)
+	if err != nil {
+		t.Fatalf("build goal prompt returned error: %v", err)
+	}
+	if prompt != "/goal Finish the task" {
+		t.Fatalf("raw prompt = %q, want /goal Finish the task", prompt)
+	}
+	prompt, err = buildRunPrompt(RunModeResume, Task{Title: "Goal"}, " /goal clear ", nil, true)
+	if err != nil {
+		t.Fatalf("build goal clear prompt returned error: %v", err)
+	}
+	if prompt != "/goal clear" {
+		t.Fatalf("raw prompt = %q, want /goal clear", prompt)
+	}
+	prompt, err = buildRunPrompt(RunModeResume, Task{Title: "Goal"}, " /goal ", nil, true)
+	if err != nil {
+		t.Fatalf("build bare goal prompt returned error: %v", err)
+	}
+	if prompt != "/goal" {
+		t.Fatalf("raw prompt = %q, want /goal", prompt)
 	}
 	if _, err := buildRunPrompt(RunModeResume, Task{Title: "Compact"}, "/fast", nil, true); !errors.Is(err, ErrValidation) {
 		t.Fatalf("invalid raw prompt error = %v, want %v", err, ErrValidation)

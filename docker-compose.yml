@@ -15,6 +15,10 @@ services:
       retries: 20
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      default:
+        aliases:
+          - infra-postgres
 
   migrate:
     build:
@@ -25,7 +29,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-meridian}:${POSTGRES_PASSWORD:-meridian}@postgres:5432/${POSTGRES_DB:-meridian}?sslmode=disable}
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgres://${POSTGRES_USER:-meridian}:${POSTGRES_PASSWORD:-meridian}@postgres:5432/${POSTGRES_DB:-meridian}?sslmode=disable}
       MIGRATIONS_DIR: /app/db/migrations
     command: ["/app/migrate", "up"]
 
@@ -39,7 +43,7 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-meridian}:${POSTGRES_PASSWORD:-meridian}@postgres:5432/${POSTGRES_DB:-meridian}?sslmode=disable}
+      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgres://${POSTGRES_USER:-meridian}:${POSTGRES_PASSWORD:-meridian}@postgres:5432/${POSTGRES_DB:-meridian}?sslmode=disable}
       BACKEND_ADDR: :8080
       MIGRATIONS_DIR: /app/db/migrations
       RUNNER_ARTIFACT_DIR: /app/artifacts/runner

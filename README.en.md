@@ -453,6 +453,9 @@ For most self-hosted installs, use the root `docker-compose.yml`:
 Use `.env.example` as the deployment template. The default bind address is
 `127.0.0.1` for local safety; change `MERIDIAN_HTTP_BIND` only when a reverse
 proxy, firewall, and HTTPS plan are in place.
+For Docker Compose deployments that use an external database, set
+`MERIDIAN_DATABASE_URL`; do not set `DATABASE_URL` in the compose `.env`, so
+old shell or CI values cannot override the bundled database connection.
 
 Source-based deployment is still supported:
 

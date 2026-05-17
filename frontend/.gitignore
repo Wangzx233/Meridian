@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.log
+chrome-*.out.txt
+chrome-*.err.txt
+*.png

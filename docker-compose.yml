@@ -1,0 +1,64 @@
+name: meridian
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-meridian}
+      POSTGRES_USER: ${POSTGRES_USER:-meridian}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-meridian}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: meridian-backend:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-meridian}:${POSTGRES_PASSWORD:-meridian}@postgres:5432/${POSTGRES_DB:-meridian}?sslmode=disable}
+      MIGRATIONS_DIR: /app/db/migrations
+    command: ["/app/migrate", "up"]
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: meridian-backend:latest
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-meridian}:${POSTGRES_PASSWORD:-meridian}@postgres:5432/${POSTGRES_DB:-meridian}?sslmode=disable}
+      BACKEND_ADDR: :8080
+      MIGRATIONS_DIR: /app/db/migrations
+      RUNNER_ARTIFACT_DIR: /app/artifacts/runner
+      WORKBENCH_AUTH_USERS: ${WORKBENCH_AUTH_USERS:-}
+      WORKBENCH_AUTH_SESSION_SECRET: ${WORKBENCH_AUTH_SESSION_SECRET:-}
+      WORKBENCH_RUNNER_TOKEN: ${WORKBENCH_RUNNER_TOKEN:-}
+      WORKBENCH_AUTH_COOKIE_SECURE: ${WORKBENCH_AUTH_COOKIE_SECURE:-false}
+      CODEX_BYPASS_APPROVALS_AND_SANDBOX: ${CODEX_BYPASS_APPROVALS_AND_SANDBOX:-true}
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: meridian-frontend:latest
+    depends_on:
+      - backend
+    restart: unless-stopped
+    ports:
+      - "${MERIDIAN_HTTP_BIND:-127.0.0.1}:${MERIDIAN_HTTP_PORT:-18080}:8080"
+
+volumes:
+  postgres_data:

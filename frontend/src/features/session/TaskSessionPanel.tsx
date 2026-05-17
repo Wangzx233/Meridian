@@ -1,0 +1,931 @@
+import {
+  AlertTriangle,
+  Archive,
+  Bell,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronUp,
+  Circle,
+  ClipboardList,
+  Copy,
+  Download,
+  Edit3,
+  FileText,
+  FolderKanban,
+  FolderOpen,
+  History,
+  Loader2,
+  LogOut,
+  Mail,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Play,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Server as ServerIcon,
+  Settings as SettingsIcon,
+  Square,
+  Terminal,
+  TerminalSquare,
+  Trash2,
+  X,
+  Zap,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import type { CSSProperties, FormEvent } from "react";
+import type {
+  CodexReasoningEffort,
+  CodexServiceTier,
+  ContextItem,
+  ContextScope,
+  ContextType,
+  CreateRunMode,
+  CreateRunRequest,
+  CreateRunResponse,
+  MarkDoneRequest,
+  Project,
+  Run,
+  Server,
+  Task,
+  TaskMemoryDraft,
+} from "../../types";
+import { isActiveRunStatus, shortId } from "../../utils";
+import type { LoadState } from "../../shared/loadState";
+import type { Notice } from "../../shared/notices";
+import { composerDefaultHeight, composerMaxHeight, composerMinHeight, sidePanelDefaultWidth, sidePanelMaxWidth, sidePanelMinWidth, type SidePanelTab, type WorkbenchTab } from "../../shared/constants";
+import { useI18n } from "../../shared/i18n";
+import { useStoredPanelSize, useStoredString } from "../../shared/storage";
+import { EmptyState, Fact, LoadingState, ResizeHandle, StatusBadge } from "../../shared/ui";
+import { AgentsFilePanel } from "../agents/AgentsFilePanel";
+import { ContextPanel } from "../context/ContextPanel";
+import { ProjectFilesPanel } from "../files/ProjectFilesPanel";
+import { PromptPanel, RunHistory, RunOutputWorkspace } from "../runs/RunOutputWorkspace";
+import { TerminalPanel } from "../terminal/TerminalPanel";
+import { RunComposer } from "./RunComposer";
+
+export function TaskSessionPanel(props: {
+  server: Server | null;
+  project: Project | null;
+  task: Task | null;
+  taskLoading: boolean;
+  runs: Run[];
+  runsState: LoadState;
+  activeRun: Run | null;
+  selectedRun: Run | null;
+  selectedRunId: string | null;
+  onSelectRun: (runId: string) => void;
+  contextItems: ContextItem[];
+  contextState: LoadState;
+  onCreateContext: (input: {
+    server_id?: string | null;
+    project_id?: string | null;
+    scope: ContextScope;
+    task_id: string | null;
+    type: ContextType;
+    title: string;
+    content: string;
+    tags: string[];
+  }) => void;
+  onUpdateContext: (
+    id: string,
+    input: {
+      server_id?: string | null;
+      project_id?: string | null;
+      scope: ContextScope;
+      task_id: string | null;
+      type: ContextType;
+      title: string;
+      content: string;
+      tags: string[];
+    },
+  ) => void;
+  onDeleteContext: (id: string) => void;
+  creatingContext: boolean;
+  updatingContext: boolean;
+  deletingContext: boolean;
+  onCreateRun: (input: {
+    message: string;
+    mode: CreateRunMode;
+    codex_model: string;
+    codex_reasoning_effort: CodexReasoningEffort;
+    codex_service_tier: CodexServiceTier;
+    raw_command?: boolean;
+    context_item_ids: string[];
+  }) => void;
+  creatingRun: boolean;
+  onInterruptRun: (input: {
+    message: string;
+    mode: CreateRunMode;
+    codex_model: string;
+    codex_reasoning_effort: CodexReasoningEffort;
+    codex_service_tier: CodexServiceTier;
+    raw_command?: boolean;
+    context_item_ids: string[];
+  }) => void;
+  interruptingRun: boolean;
+  onNotice: (notice: Notice) => void;
+  onCancelRun: (runId: string) => void;
+  cancelingRun: boolean;
+  onDraftMemory: (input: CreateRunRequest) => Promise<CreateRunResponse>;
+  onMarkDone: (input: MarkDoneRequest) => void;
+  markingDone: boolean;
+}) {
+  const { language, t } = useI18n();
+  const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);
+  const [message, setMessageState] = useState("");
+  const [mode, setMode] = useState<CreateRunMode>("auto");
+  const [codexModel, setCodexModel] = useStoredString("ctw.codexModel", "");
+  const [reasoningEffort, setReasoningEffort] = useStoredString("ctw.reasoningEffort", "") as [
+    CodexReasoningEffort,
+    (value: CodexReasoningEffort) => void,
+  ];
+  const [serviceTier, setServiceTier] = useStoredString("ctw.codexServiceTier", "") as [
+    CodexServiceTier,
+    (value: CodexServiceTier) => void,
+  ];
+  const [taskMemory, setTaskMemory] = useState<TaskMemoryDraft>(emptyTaskMemoryDraft());
+  const [memoryDetailsOpen, setMemoryDetailsOpen] = useState(false);
+  const [memoryDraftRunId, setMemoryDraftRunId] = useState<string | null>(null);
+  const [activeWorkbenchTab, setActiveWorkbenchTab] = useState<WorkbenchTab>("output");
+  const [visitedWorkbenchTabs, setVisitedWorkbenchTabs] = useState<WorkbenchTab[]>(["output"]);
+  const [visitedWorkbenchProjectId, setVisitedWorkbenchProjectId] = useState<string | null>(null);
+  const [activeSideTab, setActiveSideTab] = useState<SidePanelTab>("context");
+  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
+  const [composerCollapsed, setComposerCollapsed] = useState(false);
+  const projectId = props.project?.id ?? null;
+  const [sidePanelWidth, setSidePanelWidth] = useStoredPanelSize(
+    "ctw.sidePanelWidth",
+    sidePanelDefaultWidth,
+    sidePanelMinWidth,
+    sidePanelMaxWidth,
+  );
+  const [composerHeight, setComposerHeight] = useStoredPanelSize(
+    "ctw.composerHeight",
+    composerDefaultHeight,
+    composerMinHeight,
+    composerMaxHeight,
+  );
+  const messageDraftKey = props.task?.id ? `ctw.runDraft.${props.task.id}` : null;
+
+  const setMessage = (value: string) => {
+    setMessageState(value);
+    if (!messageDraftKey) {
+      return;
+    }
+    try {
+      if (value) {
+        window.localStorage.setItem(messageDraftKey, value);
+      } else {
+        window.localStorage.removeItem(messageDraftKey);
+      }
+    } catch {
+      // Local storage can be unavailable in private or restricted browser modes.
+    }
+  };
+
+  const clearMessageDraft = () => {
+    setMessageState("");
+    if (!messageDraftKey) {
+      return;
+    }
+    try {
+      window.localStorage.removeItem(messageDraftKey);
+    } catch {
+      // Local storage can be unavailable in private or restricted browser modes.
+    }
+  };
+
+  useEffect(() => {
+    setSelectedContextIds([]);
+    setMode("auto");
+    setTaskMemory(emptyTaskMemoryDraft());
+    setMemoryDetailsOpen(false);
+    setMemoryDraftRunId(null);
+  }, [props.task?.id]);
+
+  useEffect(() => {
+    if (!messageDraftKey) {
+      setMessageState("");
+      return;
+    }
+    try {
+      setMessageState(window.localStorage.getItem(messageDraftKey) ?? "");
+    } catch {
+      setMessageState("");
+    }
+  }, [messageDraftKey]);
+
+  useEffect(() => {
+    setActiveWorkbenchTab("output");
+    setActiveSideTab("context");
+  }, [props.task?.id]);
+
+  useEffect(() => {
+    setActiveWorkbenchTab("output");
+    setVisitedWorkbenchTabs(["output"]);
+    setVisitedWorkbenchProjectId(projectId);
+  }, [projectId]);
+
+  useEffect(() => {
+    setVisitedWorkbenchTabs((current) =>
+      current.includes(activeWorkbenchTab) ? current : [...current, activeWorkbenchTab],
+    );
+  }, [activeWorkbenchTab]);
+
+  const taskHasActiveRun = Boolean(props.activeRun) || props.task?.status === "running";
+  const canSend = Boolean(props.task) && !taskHasActiveRun && props.task?.status !== "done" && props.task?.status !== "archived";
+  const canInterrupt =
+    Boolean(props.task && props.activeRun && isActiveRunStatus(props.activeRun.status)) &&
+    props.task?.status !== "done" &&
+    props.task?.status !== "archived";
+  const canMarkDone = Boolean(props.task) && (props.task?.status === "open" || props.task?.status === "waiting_user");
+  const canDraftMemory = canMarkDone && !taskHasActiveRun;
+  const hasObservedSession = Boolean(props.task?.codex_session_id || props.runs.some((run) => run.codex_session_id));
+  const canCompact = canSend && hasObservedSession;
+  const activeWorkspaceTab = visitedWorkbenchProjectId === projectId ? activeWorkbenchTab : "output";
+  const mountedWorkspaceTabs = visitedWorkbenchProjectId === projectId ? visitedWorkbenchTabs : ["output"];
+
+  const selectWorkbenchTab = (tab: WorkbenchTab) => {
+    setActiveWorkbenchTab(tab);
+    setVisitedWorkbenchProjectId(projectId);
+  };
+
+  const submitRun = (event: FormEvent) => {
+    event.preventDefault();
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
+      return;
+    }
+    if (trimmedMessage === "/fast") {
+      setServiceTier("fast");
+      clearMessageDraft();
+      props.onNotice({ tone: "info", message: t("session.fastEnabled") });
+      return;
+    }
+    if (trimmedMessage === "/compact") {
+      if (!canCompact) {
+        props.onNotice({ tone: "danger", message: t("session.compactRequiresSession") });
+        return;
+      }
+      submitCompact();
+      return;
+    }
+    if (!canSend) {
+      return;
+    }
+    props.onCreateRun({
+      message: trimmedMessage,
+      mode,
+      codex_model: codexModel.trim(),
+      codex_reasoning_effort: reasoningEffort,
+      codex_service_tier: serviceTier,
+      context_item_ids: selectedContextIds,
+    });
+    clearMessageDraft();
+    setSelectedContextIds([]);
+  };
+
+  const submitCompact = () => {
+    if (!canCompact) {
+      return;
+    }
+    props.onCreateRun({
+      message: "/compact",
+      mode: "resume",
+      codex_model: codexModel.trim(),
+      codex_reasoning_effort: reasoningEffort,
+      codex_service_tier: serviceTier,
+      raw_command: true,
+      context_item_ids: [],
+    });
+    clearMessageDraft();
+    setSelectedContextIds([]);
+  };
+
+  const submitInterrupt = () => {
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
+      return;
+    }
+    if (trimmedMessage === "/fast") {
+      setServiceTier("fast");
+      clearMessageDraft();
+      props.onNotice({ tone: "info", message: t("session.fastEnabled") });
+      return;
+    }
+    if (trimmedMessage === "/compact") {
+      props.onNotice({ tone: "danger", message: t("session.compactAfterActive") });
+      return;
+    }
+    if (!canInterrupt) {
+      return;
+    }
+    props.onInterruptRun({
+      message: trimmedMessage,
+      mode,
+      codex_model: codexModel.trim(),
+      codex_reasoning_effort: reasoningEffort,
+      codex_service_tier: serviceTier,
+      context_item_ids: selectedContextIds,
+    });
+    clearMessageDraft();
+    setSelectedContextIds([]);
+  };
+
+  const submitDone = (event: FormEvent) => {
+    event.preventDefault();
+    if (!canMarkDone) {
+      return;
+    }
+    const memory = trimTaskMemoryDraft(taskMemory);
+    props.onMarkDone({
+      summary: memory.problem,
+      memory,
+    });
+  };
+
+  const updateMemoryField = (field: keyof TaskMemoryDraft, value: string) => {
+    setTaskMemory((current) => ({ ...current, [field]: value }));
+  };
+
+  const draftMemory = async () => {
+    if (!canDraftMemory) {
+      return;
+    }
+    try {
+      const response = await props.onDraftMemory({
+        message: buildTaskMemoryDraftPrompt(language),
+        mode: "auto",
+        codex_model: codexModel.trim(),
+        codex_reasoning_effort: reasoningEffort,
+        codex_service_tier: serviceTier,
+        context_item_ids: [],
+      });
+      setMemoryDraftRunId(response.run.id);
+      setActiveSideTab("context");
+      selectWorkbenchTab("output");
+      props.onNotice({ tone: "info", message: t("session.memoryDraftQueued") });
+    } catch {
+      // The shared run mutation reports the API error.
+    }
+  };
+
+  useEffect(() => {
+    if (!memoryDraftRunId) {
+      return;
+    }
+    const draftRun = props.runs.find((run) => run.id === memoryDraftRunId);
+    if (!draftRun || draftRun.status === "queued" || draftRun.status === "running") {
+      return;
+    }
+    if (draftRun.status !== "succeeded") {
+      setMemoryDraftRunId(null);
+      props.onNotice({ tone: "danger", message: t("session.memoryDraftFailed") });
+      return;
+    }
+    const parsed = parseTaskMemoryDraft(draftRun.final_message ?? "");
+    setMemoryDraftRunId(null);
+    if (!parsed) {
+      props.onNotice({ tone: "danger", message: t("session.memoryDraftParseFailed") });
+      return;
+    }
+    setTaskMemory(parsed);
+    setMemoryDetailsOpen(taskMemoryDraftHasDetails(parsed));
+    setActiveSideTab("context");
+    props.onNotice({ tone: "success", message: t("session.memoryDraftFilled") });
+  }, [memoryDraftRunId, props.runs, props.onNotice, t]);
+
+  const summaryPanel = (
+    <form className="markDoneBox contextSummaryBox" onSubmit={submitDone}>
+      <div className="boxHeader">
+        <div>
+          <h3>{t("complete.title")}</h3>
+        </div>
+      </div>
+      <div className="memoryActionRow">
+        <button
+          className="ghostButton compact"
+          type="button"
+          onClick={draftMemory}
+          disabled={!canDraftMemory || props.creatingRun || Boolean(memoryDraftRunId)}
+          title={t("complete.draftTitle")}
+        >
+          {memoryDraftRunId ? <Loader2 className="spin" size={15} /> : <FileText size={15} />}
+          {t("complete.draft")}
+        </button>
+        <button className="ghostButton compact" type="button" onClick={() => setMemoryDetailsOpen((value) => !value)}>
+          {memoryDetailsOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+          {t("complete.sections")}
+        </button>
+      </div>
+      <label htmlFor="memory-problem">{t("complete.memoryNote")}</label>
+      <textarea
+        id="memory-problem"
+        rows={5}
+        value={taskMemory.problem}
+        onChange={(event) => updateMemoryField("problem", event.target.value)}
+        disabled={!canMarkDone || props.markingDone}
+        placeholder={t("complete.memoryPlaceholder")}
+      />
+      {memoryDetailsOpen ? (
+        <div className="memorySectionGrid">
+          <label>
+            {t("complete.changes")}
+            <textarea
+              rows={3}
+              value={taskMemory.changes}
+              onChange={(event) => updateMemoryField("changes", event.target.value)}
+              disabled={!canMarkDone || props.markingDone}
+              placeholder={t("complete.changesPlaceholder")}
+            />
+          </label>
+          <label>
+            {t("complete.verification")}
+            <textarea
+              rows={3}
+              value={taskMemory.verification}
+              onChange={(event) => updateMemoryField("verification", event.target.value)}
+              disabled={!canMarkDone || props.markingDone}
+              placeholder={t("complete.verificationPlaceholder")}
+            />
+          </label>
+          <label>
+            {t("complete.files")}
+            <textarea
+              rows={3}
+              value={taskMemory.files}
+              onChange={(event) => updateMemoryField("files", event.target.value)}
+              disabled={!canMarkDone || props.markingDone}
+              placeholder={t("complete.filesPlaceholder")}
+            />
+          </label>
+          <label>
+            {t("complete.risks")}
+            <textarea
+              rows={3}
+              value={taskMemory.stale_conditions}
+              onChange={(event) => updateMemoryField("stale_conditions", event.target.value)}
+              disabled={!canMarkDone || props.markingDone}
+              placeholder={t("complete.risksPlaceholder")}
+            />
+          </label>
+        </div>
+      ) : null}
+      <button className="doneButton" type="submit" disabled={!canMarkDone || props.markingDone}>
+        {props.markingDone ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
+        {t("complete.markDone")}
+      </button>
+    </form>
+  );
+
+  if (!props.project) {
+    return (
+      <section className="sessionPanel emptySession" aria-label="Task session">
+        <EmptyState
+          icon={<FolderKanban size={24} />}
+          title={t("session.selectProject")}
+          body={t("session.selectProjectBody")}
+        />
+      </section>
+    );
+  }
+
+  if (props.taskLoading && !props.task) {
+    return (
+      <section className="sessionPanel emptySession" aria-label="Task session">
+        <LoadingState label={t("session.loading")} />
+      </section>
+    );
+  }
+
+  if (!props.task) {
+    return (
+      <section className="sessionPanel emptySession" aria-label="Task session">
+        <EmptyState
+          icon={<ClipboardList size={24} />}
+          title={t("session.selectTask")}
+          body={t("session.selectTaskBody")}
+        />
+      </section>
+    );
+  }
+
+  return (
+    <section className="sessionPanel" aria-label="Task session">
+      <div className="sessionHeader">
+        <div className="sessionTitleBlock">
+          <div className="breadcrumb">
+            <span>{props.server?.name ?? t("session.unknownServer")}</span>
+            <span>/</span>
+            <span>{props.project.name}</span>
+          </div>
+          <div className="titleLine">
+            <h2>{props.task.title}</h2>
+            <StatusBadge status={props.task.status} />
+          </div>
+          {props.task.description ? <p title={props.task.description}>{props.task.description}</p> : null}
+        </div>
+        <div className="sessionFacts" aria-label={t("session.facts")}>
+          <Fact label={t("session.workdir")} value={props.project.workdir} mono />
+          <Fact label={t("session.rules")} value={props.project.rules_path || t("session.notConfigured")} />
+          <Fact label={t("session.session")} value={shortId(props.task.codex_session_id, 18)} mono />
+          <Fact label={t("session.activeRun")} value={shortId(props.task.active_run_id, 12)} mono />
+        </div>
+      </div>
+
+      <div
+        className={`workbenchBody ${sidePanelCollapsed ? "sidePanelCollapsed" : ""}`}
+        style={
+          {
+            "--side-panel-width": `${sidePanelWidth}px`,
+            "--composer-height": `${composerHeight}px`,
+          } as CSSProperties
+        }
+      >
+        <section className={`primaryWorkspace ${composerCollapsed ? "composerCollapsed" : ""}`} aria-label={t("session.workbench")}>
+          <div className="workspaceTabs" role="tablist" aria-label={t("session.tools")}>
+            <div className="workspaceTabGroup">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeWorkspaceTab === "output"}
+                className={activeWorkspaceTab === "output" ? "isSelected" : ""}
+              onClick={() => selectWorkbenchTab("output")}
+              title={t("session.output")}
+            >
+              <TerminalSquare size={15} />
+                {t("session.output")}
+            </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeWorkspaceTab === "terminal"}
+                className={activeWorkspaceTab === "terminal" ? "isSelected" : ""}
+              onClick={() => selectWorkbenchTab("terminal")}
+              title={t("session.terminal")}
+            >
+              <Terminal size={15} />
+                {t("session.terminal")}
+            </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeWorkspaceTab === "files"}
+                className={activeWorkspaceTab === "files" ? "isSelected" : ""}
+              onClick={() => selectWorkbenchTab("files")}
+              title={t("session.files")}
+            >
+              <FolderOpen size={15} />
+                {t("session.files")}
+            </button>
+            </div>
+            <button
+              className="miniCollapseButton"
+              type="button"
+              onClick={() => setComposerCollapsed((value) => !value)}
+              aria-label={composerCollapsed ? t("session.expandComposer") : t("session.collapseComposer")}
+              aria-expanded={!composerCollapsed}
+              title={composerCollapsed ? t("session.expandComposer") : t("session.collapseComposer")}
+            >
+              {composerCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+          </div>
+
+          <div className="workspaceContent">
+            {mountedWorkspaceTabs.includes("output") ? (
+              <div className="workspacePane" hidden={activeWorkspaceTab !== "output"}>
+                <RunOutputWorkspace
+                  run={props.selectedRun}
+                  active={Boolean(props.selectedRun && isActiveRunStatus(props.selectedRun.status))}
+                  runs={props.runs}
+                  runsState={props.runsState}
+                  selectedRunId={props.selectedRunId}
+                  onSelectRun={props.onSelectRun}
+                  activeRun={props.activeRun}
+                  onCancelRun={props.onCancelRun}
+                  cancelingRun={props.cancelingRun}
+                />
+              </div>
+            ) : null}
+
+            {mountedWorkspaceTabs.includes("terminal") ? (
+              <div className="workspacePane" hidden={activeWorkspaceTab !== "terminal"}>
+                <TerminalPanel server={props.server} project={props.project} visible={activeWorkspaceTab === "terminal"} />
+              </div>
+            ) : null}
+
+            {mountedWorkspaceTabs.includes("files") ? (
+              <div className="workspacePane" hidden={activeWorkspaceTab !== "files"}>
+                <ProjectFilesPanel server={props.server} project={props.project} />
+              </div>
+            ) : null}
+          </div>
+
+          <ResizeHandle
+            label={t("session.resizeComposer")}
+            hidden={composerCollapsed}
+            orientation="horizontal"
+            direction="next"
+            min={composerMinHeight}
+            max={composerMaxHeight}
+            value={composerHeight}
+            onChange={setComposerHeight}
+          />
+
+          {composerCollapsed ? (
+            <button
+              className="composerCollapsedBar"
+              type="button"
+              onClick={() => setComposerCollapsed(false)}
+              aria-label={t("session.expandComposer")}
+              title={t("session.expandComposer")}
+            >
+              <Play size={14} />
+              <span>{message.trim() || t("session.instruction")}</span>
+              {selectedContextIds.length > 0 ? <strong>{selectedContextIds.length}</strong> : null}
+            </button>
+          ) : (
+            <RunComposer
+              task={props.task}
+              runs={props.runs}
+              message={message}
+              onMessageChange={setMessage}
+              mode={mode}
+              onModeChange={setMode}
+              codexModel={codexModel}
+              onCodexModelChange={setCodexModel}
+              reasoningEffort={reasoningEffort}
+              onReasoningEffortChange={setReasoningEffort}
+              serviceTier={serviceTier}
+              onServiceTierChange={setServiceTier}
+              contextCount={selectedContextIds.length}
+              disabled={!canSend || props.creatingRun}
+              canInterrupt={canInterrupt}
+              canCompact={canCompact}
+              blockedReason={
+                taskHasActiveRun
+                  ? t("session.runActive")
+                  : props.task.status === "done" || props.task.status === "archived"
+                    ? t("session.taskClosed")
+                    : undefined
+              }
+              submitting={props.creatingRun}
+              onSubmit={submitRun}
+              onCompact={submitCompact}
+              onInterrupt={submitInterrupt}
+              interrupting={props.interruptingRun}
+            />
+          )}
+        </section>
+
+        <ResizeHandle
+          label={t("session.resizeTools")}
+          hidden={sidePanelCollapsed}
+          orientation="vertical"
+          direction="next"
+          min={sidePanelMinWidth}
+          max={sidePanelMaxWidth}
+          value={sidePanelWidth}
+          onChange={setSidePanelWidth}
+        />
+
+        {sidePanelCollapsed ? (
+          <aside className="sideRail" aria-label={t("session.collapsedTools")}>
+            <button
+              className="miniCollapseButton"
+              type="button"
+              onClick={() => setSidePanelCollapsed(false)}
+              aria-label={t("session.expandTools")}
+              aria-expanded={false}
+              title={t("session.expandTools")}
+            >
+              <PanelLeftOpen size={14} />
+            </button>
+            <button type="button" onClick={() => setSidePanelCollapsed(false)} title={t("session.context")} aria-label={t("session.context")}>
+              <ClipboardList size={15} />
+            </button>
+            <button type="button" onClick={() => setSidePanelCollapsed(false)} title={t("session.turns")} aria-label={t("session.turns")}>
+              <History size={15} />
+            </button>
+          </aside>
+        ) : (
+        <aside className="sidePanel" aria-label="Task tools and history">
+          <div className="segmentedTabs" role="tablist" aria-label={t("session.sideViews")}>
+            <button
+              className="miniCollapseButton"
+              type="button"
+              onClick={() => setSidePanelCollapsed(true)}
+              aria-label={t("session.collapseTools")}
+              aria-expanded={!sidePanelCollapsed}
+              title={t("session.collapseTools")}
+            >
+              <PanelRightClose size={14} />
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSideTab === "context"}
+              className={activeSideTab === "context" ? "isSelected" : ""}
+              onClick={() => setActiveSideTab("context")}
+              title={t("session.context")}
+            >
+              {t("session.context")}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSideTab === "agents"}
+              className={activeSideTab === "agents" ? "isSelected" : ""}
+              onClick={() => setActiveSideTab("agents")}
+              title={t("session.agents")}
+            >
+              {t("session.agents")}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSideTab === "runs"}
+              className={activeSideTab === "runs" ? "isSelected" : ""}
+              onClick={() => setActiveSideTab("runs")}
+              title={t("session.turns")}
+            >
+              {t("session.turns")}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSideTab === "prompt"}
+              className={activeSideTab === "prompt" ? "isSelected" : ""}
+              onClick={() => setActiveSideTab("prompt")}
+              title={t("session.prompt")}
+            >
+              {t("session.prompt")}
+            </button>
+          </div>
+
+          <div className="sidePanelContent">
+            {activeSideTab === "context" ? (
+              <ContextPanel
+                server={props.server}
+                project={props.project}
+                task={props.task}
+                contextItems={props.contextItems}
+                state={props.contextState}
+                selectedIds={selectedContextIds}
+                onSelectionChange={setSelectedContextIds}
+                onCreateContext={props.onCreateContext}
+                onUpdateContext={props.onUpdateContext}
+                onDeleteContext={props.onDeleteContext}
+                creating={props.creatingContext}
+                updating={props.updatingContext}
+                deleting={props.deletingContext}
+                summaryPanel={summaryPanel}
+              />
+            ) : null}
+
+            {activeSideTab === "agents" ? <AgentsFilePanel server={props.server} project={props.project} /> : null}
+
+            {activeSideTab === "runs" ? (
+              <RunHistory
+                runs={props.runs}
+                selectedRunId={props.selectedRunId}
+                onSelectRun={(runId) => {
+                  props.onSelectRun(runId);
+                  setActiveWorkbenchTab("output");
+                }}
+                state={props.runsState}
+                activeRun={props.activeRun}
+                onCancelRun={props.onCancelRun}
+                cancelingRun={props.cancelingRun}
+              />
+            ) : null}
+
+            {activeSideTab === "prompt" ? <PromptPanel run={props.selectedRun} /> : null}
+          </div>
+
+        </aside>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function emptyTaskMemoryDraft(): TaskMemoryDraft {
+  return {
+    problem: "",
+    changes: "",
+    verification: "",
+    files: "",
+    stale_conditions: "",
+  };
+}
+
+function trimTaskMemoryDraft(memory: TaskMemoryDraft): TaskMemoryDraft {
+  return {
+    problem: memory.problem.trim(),
+    root_cause: memory.root_cause?.trim() || undefined,
+    changes: memory.changes.trim(),
+    files: memory.files.trim(),
+    decisions: memory.decisions?.trim() || undefined,
+    verification: memory.verification.trim(),
+    related_tasks: memory.related_tasks?.trim() || undefined,
+    source_commit: memory.source_commit?.trim() || undefined,
+    stale_conditions: memory.stale_conditions.trim(),
+  };
+}
+
+function taskMemoryDraftHasDetails(memory: TaskMemoryDraft): boolean {
+  return Boolean(memory.changes.trim() || memory.verification.trim() || memory.files.trim() || memory.stale_conditions.trim());
+}
+
+function buildTaskMemoryDraftPrompt(language: "en" | "zh"): string {
+  if (language === "zh") {
+    return `请为当前任务起草一份简洁的完成记忆。
+
+规则：
+- 不要修改文件。
+- 不要把任务标记完成。
+- 不要编造细节。
+- 优先简短、可复用。
+- 只写有可见依据且确实有用的字段。
+- 不相关或不确定的字段留空字符串。
+- JSON key 必须保持英文，不要翻译 key。
+- JSON 字段值必须使用中文，除非文件路径、命令、代码符号或专有名词本身是英文。
+- 只返回下面这个带标签的 JSON 块，不要输出任何额外说明。
+
+返回这个准确形状：
+<task_memory_json>
+{
+  "problem": "",
+  "changes": "",
+  "verification": "",
+  "files": "",
+  "stale_conditions": ""
+}
+</task_memory_json>`;
+  }
+  return `Draft a concise completion memory for this task.
+
+Rules:
+- Do not modify files.
+- Do not mark the task done.
+- Do not invent details.
+- Prefer brevity.
+- Only include fields that are useful and supported by visible evidence.
+- Leave irrelevant or uncertain fields empty.
+- Keep JSON keys in English exactly as shown.
+- Write JSON field values in English, except for file paths, commands, code symbols, or proper nouns.
+- Return only the tagged JSON block and no prose.
+
+Return this exact shape:
+<task_memory_json>
+{
+  "problem": "",
+  "changes": "",
+  "verification": "",
+  "files": "",
+  "stale_conditions": ""
+}
+</task_memory_json>`;
+}
+
+function parseTaskMemoryDraft(output: string): TaskMemoryDraft | null {
+  const match = output.match(/<task_memory_json>\s*([\s\S]*?)\s*<\/task_memory_json>/i);
+  if (!match) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(match[1]);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    const record = parsed as Record<string, unknown>;
+    return {
+      problem: stringField(record.problem),
+      root_cause: optionalStringField(record.root_cause),
+      changes: stringField(record.changes),
+      files: stringField(record.files),
+      decisions: optionalStringField(record.decisions),
+      verification: stringField(record.verification),
+      related_tasks: optionalStringField(record.related_tasks),
+      source_commit: optionalStringField(record.source_commit),
+      stale_conditions: stringField(record.stale_conditions),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function stringField(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function optionalStringField(value: unknown): string | undefined {
+  const text = stringField(value).trim();
+  return text ? text : undefined;
+}

@@ -1,0 +1,11 @@
+.git
+.gitignore
+artifacts/
+backend-dev.log
+frontend/node_modules/
+frontend/dist/
+frontend/*.log
+**/*.log
+**/.DS_Store
+tmp/
+

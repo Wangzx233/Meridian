@@ -1,0 +1,8 @@
+DROP TABLE IF EXISTS task_memories;
+DROP TABLE IF EXISTS run_events;
+DROP TABLE IF EXISTS run_context_items;
+DROP TABLE IF EXISTS context_items;
+DROP TABLE IF EXISTS runs;
+DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS projects;
+DROP TABLE IF EXISTS servers;

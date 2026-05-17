@@ -456,6 +456,13 @@ proxy, firewall, and HTTPS plan are in place.
 For Docker Compose deployments that use an external database, set
 `MERIDIAN_DATABASE_URL`; do not set `DATABASE_URL` in the compose `.env`, so
 old shell or CI values cannot override the bundled database connection.
+If the external database is another Docker container on a different network,
+also set `MERIDIAN_DATABASE_DOCKER_NETWORK=<network>` and load
+`docker-compose.external-db.yml`:
+
+```bash
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.external-db.yml up -d --build
+```
 
 Source-based deployment is still supported:
 

@@ -15,10 +15,6 @@ services:
       retries: 20
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      default:
-        aliases:
-          - infra-postgres
 
   migrate:
     build:

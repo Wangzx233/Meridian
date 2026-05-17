@@ -1,0 +1,20 @@
+services:
+  postgres:
+    profiles:
+      - bundled-db
+
+  migrate:
+    depends_on: !reset []
+    networks:
+      - default
+      - external_database
+
+  backend:
+    networks:
+      - default
+      - external_database
+
+networks:
+  external_database:
+    name: ${MERIDIAN_DATABASE_DOCKER_NETWORK}
+    external: true

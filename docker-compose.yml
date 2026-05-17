@@ -46,6 +46,8 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+    ports:
+      - "${MERIDIAN_HTTP_BIND:-127.0.0.1}:${MERIDIAN_BACKEND_HTTP_PORT:-18091}:8080"
     environment:
       DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgres://${POSTGRES_USER:-meridian}:${POSTGRES_PASSWORD:-meridian}@postgres:5432/${POSTGRES_DB:-meridian}?sslmode=disable}
       BACKEND_ADDR: :8080
@@ -69,6 +71,7 @@ services:
     restart: unless-stopped
     ports:
       - "${MERIDIAN_HTTP_BIND:-127.0.0.1}:${MERIDIAN_HTTP_PORT:-18080}:8080"
+      - "${MERIDIAN_HTTP_BIND:-127.0.0.1}:${MERIDIAN_FRONTEND_LEGACY_HTTP_PORT:-18092}:8080"
 
 volumes:
   postgres_data:

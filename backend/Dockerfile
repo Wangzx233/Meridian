@@ -1,4 +1,5 @@
 FROM golang:1.25-alpine AS builder
+ARG BUILD_COMMIT=dev
 
 WORKDIR /src
 
@@ -8,7 +9,7 @@ RUN go mod download
 COPY backend ./backend
 COPY runner ./runner
 
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./backend/cmd/server
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X codex-task-workbench/backend/internal/control.BuildCommit=${BUILD_COMMIT}" -o /out/server ./backend/cmd/server
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/migrate ./backend/cmd/migrate
 
 RUN mkdir -p /out/artifacts/runner && \

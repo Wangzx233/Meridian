@@ -24,6 +24,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        BUILD_COMMIT: ${MERIDIAN_BUILD_COMMIT:-dev}
     image: meridian-backend:latest
     depends_on:
       postgres:
@@ -37,6 +39,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        BUILD_COMMIT: ${MERIDIAN_BUILD_COMMIT:-dev}
     image: meridian-backend:latest
     depends_on:
       migrate:
@@ -57,6 +61,8 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        BUILD_COMMIT: ${MERIDIAN_BUILD_COMMIT:-dev}
     image: meridian-frontend:latest
     depends_on:
       - backend

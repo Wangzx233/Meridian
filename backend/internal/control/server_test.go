@@ -47,6 +47,28 @@ func TestRunnerInstallShellResolvesCodexPathForSystemd(t *testing.T) {
 	}
 }
 
+func TestBuildInfoIsPublicWhenAuthConfigured(t *testing.T) {
+	old := BuildCommit
+	BuildCommit = "abc123"
+	defer func() { BuildCommit = old }()
+
+	api := NewAPI(nil, nil, AuthConfig{
+		Users:        map[string]string{"admin": "secret"},
+		SessionKey:   []byte("test-session-secret"),
+		RunnerToken:  "runner-secret",
+		CookieSecure: false,
+	})
+	rec := httptest.NewRecorder()
+	api.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/build", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"commit":"abc123"`) {
+		t.Fatalf("build response missing commit: %s", rec.Body.String())
+	}
+}
+
 func TestMarkDoneDoesNotCreatePendingNotice(t *testing.T) {
 	dsn := testDatabaseURL(t)
 	ctx := context.Background()

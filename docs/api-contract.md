@@ -50,6 +50,22 @@ Common error codes:
 - `runner_request_timeout`
 - `internal_error`
 
+### Build Info
+
+```text
+GET /api/v1/build
+```
+
+Returns the backend build commit and is public so deployment automation can
+verify that the public control plane is serving the commit that triggered the
+deployment.
+
+```json
+{
+  "commit": "93b7b46..."
+}
+```
+
 ### List Response
 
 ```json

@@ -382,6 +382,11 @@ Docker Compose 部署如果要使用外部数据库，设置 `MERIDIAN_DATABASE_
 
 公开或共享部署必须使用 HTTPS，并确保设备代理安装命令使用公网控制平面 URL。`WORKBENCH_AUTH_USERS` 为空时，首次浏览器访问会进入初始化管理员账号流程。
 
+私有 Gitea 部署会把触发部署的 commit 写入后端和前端镜像，并在部署后校验
+Compose 内部网络和公网 URL。后端提供 `GET /api/v1/build`，前端提供
+`/build.json`。如果公网地址不是 `https://meridian.example.com`，在部署 `.env` 中设置
+`MERIDIAN_DEPLOY_VERIFY_URL`。
+
 ## 当前限制
 
 - 认证是简单登录门禁，没有自助注册或细粒度权限模型。

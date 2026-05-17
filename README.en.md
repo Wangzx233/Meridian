@@ -472,6 +472,12 @@ Public or shared deployments should use HTTPS and make runner install commands
 use the public control-plane URL. If `WORKBENCH_AUTH_USERS` is empty, the first
 browser visit enters admin setup mode.
 
+Private Gitea deployments stamp backend and frontend images with the pushed
+commit and then verify both the internal Compose network and public URL. The
+backend exposes `GET /api/v1/build`; the frontend serves `/build.json`. Set
+`MERIDIAN_DEPLOY_VERIFY_URL` in the deployment `.env` when the public URL is not
+`https://meridian.example.com`.
+
 ## Current Limitations
 
 - Authentication is a simple login gate only; there is no self-registration or

@@ -35,6 +35,7 @@ func NewAPI(store *Store, logger *slog.Logger, auth AuthConfig) *API {
 
 func (a *API) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/build", a.handleBuildInfo)
 	mux.HandleFunc("/api/v1/auth/login", a.handleAuthLogin)
 	mux.HandleFunc("/api/v1/auth/logout", a.handleAuthLogout)
 	mux.HandleFunc("/api/v1/auth/session", a.handleAuthSession)

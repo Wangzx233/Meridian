@@ -275,7 +275,7 @@ func (a *API) requireAuth(next http.Handler) http.Handler {
 
 func (a *API) isPublicAuthRoute(path string) bool {
 	switch path {
-	case "/api/v1/auth/login", "/api/v1/auth/logout", "/api/v1/auth/session", "/api/v1/auth/setup":
+	case "/api/v1/build", "/api/v1/auth/login", "/api/v1/auth/logout", "/api/v1/auth/session", "/api/v1/auth/setup":
 		return true
 	default:
 		return false

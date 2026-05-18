@@ -36,6 +36,12 @@ Meridian runs a small device agent on each machine and uses that agent to manage
 
 Meridian is focused on management rather than intelligence: browser access, machine switching, project switching, and resumable tasks.
 
+## Interface Preview
+
+<p align="center">
+  <img src="UI.png" alt="Meridian web console interface preview">
+</p>
+
 ## Quick Start
 
 Docker Compose is the recommended deployment path. It starts PostgreSQL, starts the backend, applies database migrations automatically, builds runner artifacts, and serves the web UI.

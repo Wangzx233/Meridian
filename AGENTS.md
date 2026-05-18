@@ -12,7 +12,8 @@ stay small, explicit, and source-visible.
 - Do not revert, overwrite, or commit unrelated user or task changes.
 - Keep changes scoped to the current task.
 - Update docs when behavior, APIs, setup, deployment, or workflow changes.
-- Commit and push current-task changes unless the user explicitly says not to.
+- Commit and push current-task changes, then merge them into `main` and push
+  `main`, unless the user explicitly says not to.
 - Multiple Workbench tasks may read and write this project at the same time.
   Expect conflicts and handle them explicitly.
 
@@ -62,8 +63,9 @@ Details: [Product Scope](docs/agent-guides/product-scope.md)
 ## Concurrency Default
 
 For writing tasks, prefer a task-specific Git worktree and branch from the
-latest `origin/main`. If forced to use the same worktree as other tasks, stage
-and commit only current-task paths. Do not use `git add .`, `git add -A`, or
+latest `origin/main`. Push the task branch first, then merge it into `main` and
+push `main`. If forced to use the same worktree as other tasks, stage and commit
+only current-task paths. Do not use `git add .`, `git add -A`, or
 `git commit -a`.
 
 When a push is rejected or a conflict appears, preserve both sides, identify

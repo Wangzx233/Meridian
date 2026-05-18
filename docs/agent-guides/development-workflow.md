@@ -80,9 +80,17 @@ Docs-only changes usually need `git diff --check` plus a careful diff review.
   for the task.
 - Include only current-task changes in the commit.
 - Use clear commit messages that name the task outcome.
-- Push automatically after committing unless the user explicitly says not to.
+- Push the current task branch automatically after committing unless the user
+  explicitly says not to.
+- After the task branch push succeeds, merge the task branch into `main` and
+  push `main`.
+- If the current work is already on `main`, push `main` directly.
 - Never force-push `main` or any shared branch.
 - Do not use destructive cleanup commands for unrelated work.
+- If merge or push fails because of conflicts or a moved remote, preserve both
+  sides, resolve only current-task conflicts when ownership is clear, rerun
+  relevant checks, and push again.
 
 Final responses should report changed files, verification, commit hash, and push
-status.
+task-branch push status, `main` merge commit or fast-forward status, and `main`
+push status.

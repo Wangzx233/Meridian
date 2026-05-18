@@ -10,3 +10,4 @@ belong in `README.md`.
 ## Index
 
 - [0001. Map-based agent documentation](0001-map-based-agent-documentation.md)
+- [0002. Merge task branches to main after push](0002-merge-task-branches-to-main-after-push.md)

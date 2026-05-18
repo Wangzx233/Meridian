@@ -19,9 +19,12 @@ active task:
 - Keep the original shared checkout available for review and lightweight
   inspection only.
 - Push the task branch with `git push -u origin HEAD`.
+- After the task branch push succeeds, merge that branch into `main`.
+- Push `main` after the merge succeeds.
 
-This keeps each task on its own working tree, index, and branch. The remote
-repository remains the coordination point.
+This keeps each task on its own working tree, index, and branch while still
+making `main` the default integration branch. Task branches are backup and
+coordination points, not the final resting place for completed work.
 
 ## Same-Worktree Fallback
 
@@ -52,10 +55,33 @@ If push is rejected because the remote branch moved:
 - Rerun relevant checks after conflict resolution.
 - Push again.
 
+After the task branch push succeeds, update local `main` from `origin/main`,
+merge the task branch, rerun relevant checks, and push `main`. If `main` push is
+rejected, fetch, replay the merge on the new `origin/main`, resolve clear
+current-task conflicts, rerun checks, and push `main` again.
+
 If the rejection or conflict involves unrelated local work, another task's
 owned files, or user changes in the same worktree, do not choose a winner
 blindly. Preserve both sides and report the conflicting paths, current branch,
 remote branch, and recommended next action.
+
+## Merge-To-Main Policy
+
+Completed task work should land on `main`, not only on a task branch.
+
+- Task branches are still useful for isolation, review, backup, and conflict
+  recovery.
+- A successful task-branch push is not enough unless the user explicitly asked
+  for branch-only work.
+- Merge to `main` after the branch push succeeds.
+- Prefer a normal merge commit when preserving task branch context is useful.
+- Fast-forward is acceptable when the task branch is directly ahead of `main`.
+- Never force-push `main`.
+- If `main` is checked out in another worktree, perform the merge from that
+  worktree after confirming it is clean enough for the merge.
+- If `main` contains unrelated local changes, do not merge over them. Report the
+  path ownership issue and stop.
+- Final status must include both the task branch push and the `main` push.
 
 ## Conflict Handling Policy
 

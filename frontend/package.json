@@ -16,7 +16,9 @@
     "lucide-react": "^0.555.0",
     "monaco-editor": "^0.55.1",
     "react": "^19.2.1",
-    "react-dom": "^19.2.1"
+    "react-dom": "^19.2.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

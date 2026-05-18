@@ -35,11 +35,12 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { Run, RunEvent } from "../../types";
 import { useRunEventStream } from "../../hooks";
 import { eventSummary, formatDateTime, runDuration, shortId } from "../../utils";
 import type { LoadState } from "../../shared/loadState";
+import { MarkdownContent } from "../../shared/MarkdownContent";
 import { EmptyState, Fact, InlineNotice, LoadBoundary, PanelHeader, StatusBadge } from "../../shared/ui";
 
 export function RunOutputWorkspace(props: {
@@ -55,6 +56,8 @@ export function RunOutputWorkspace(props: {
 }) {
   const { events, state } = useRunEventStream(props.run?.id ?? null, Boolean(props.run));
   const outputRef = useRef<HTMLDivElement | null>(null);
+  const [renderMarkdown, setRenderMarkdown] = useState(true);
+  const visibleEvents = visibleOutputEvents(events);
 
   useEffect(() => {
     const node = outputRef.current;
@@ -62,7 +65,7 @@ export function RunOutputWorkspace(props: {
       return;
     }
     node.scrollTop = node.scrollHeight;
-  }, [events.length, props.run?.id]);
+  }, [visibleEvents.length, props.run?.id]);
 
   if (!props.run) {
     return (
@@ -80,9 +83,18 @@ export function RunOutputWorkspace(props: {
             <h3>Codex output</h3>
             <StatusBadge status={props.run.status} />
           </div>
-          <p>{streamStateLabel(state, props.active)} · {events.length} events · {runDuration(props.run)}</p>
+          <p>{streamStateLabel(state, props.active)} · {visibleEvents.length} events · {runDuration(props.run)}</p>
         </div>
         <div className="runPicker">
+          <label className="markdownSwitch" htmlFor="render-markdown">
+            <input
+              id="render-markdown"
+              type="checkbox"
+              checked={renderMarkdown}
+              onChange={(event) => setRenderMarkdown(event.target.checked)}
+            />
+            Markdown
+          </label>
           <label className="srOnly" htmlFor="selected-run">
             Selected turn
           </label>
@@ -120,18 +132,18 @@ export function RunOutputWorkspace(props: {
           <p>{props.run.user_message}</p>
         </article>
 
-        {events.length === 0 ? (
+        {visibleEvents.length === 0 ? (
           <div className="outputEmpty">
             {state === "error" ? "Unable to open the live stream. Stored events can still load on refresh." : "Waiting for Codex output."}
           </div>
         ) : (
-          events.map((event) => <TranscriptEvent key={`${event.run_id}-${event.seq}`} event={event} />)
+          visibleEvents.map((event) => <TranscriptEvent key={`${event.run_id}-${event.seq}`} event={event} renderMarkdown={renderMarkdown} />)
         )}
 
         {props.run.final_message ? (
           <article className="messageBlock assistantMessage final">
             <div className="messageRole">Final</div>
-            <p>{props.run.final_message}</p>
+            <MessageText text={props.run.final_message} markdown={renderMarkdown} />
           </article>
         ) : null}
       </div>
@@ -140,7 +152,7 @@ export function RunOutputWorkspace(props: {
 }
 
 
-function TranscriptEvent(props: { event: RunEvent }) {
+function TranscriptEvent(props: { event: RunEvent; renderMarkdown: boolean }) {
   const view = transcriptView(props.event);
   if (view.hidden) {
     return null;
@@ -149,7 +161,7 @@ function TranscriptEvent(props: { event: RunEvent }) {
   return (
     <article className={`messageBlock ${view.kind}`}>
       <div className="messageRole">{view.role}</div>
-      <pre>{view.text}</pre>
+      <MessageText text={view.text} markdown={props.renderMarkdown && view.markdown} />
       {props.event.event_type === "codex.event" && props.event.payload.raw !== undefined ? (
         <details className="rawDetails">
           <summary>Raw event</summary>
@@ -161,12 +173,37 @@ function TranscriptEvent(props: { event: RunEvent }) {
 }
 
 
+function MessageText(props: { text: string; markdown: boolean }) {
+  return props.markdown ? <MarkdownContent>{props.text}</MarkdownContent> : <pre>{props.text}</pre>;
+}
+
+
+function visibleOutputEvents(events: RunEvent[]) {
+  return events.filter((event) => !(event.event_type === "process.output" && event.stream === "stderr"));
+}
+
+
+function shouldRenderEventMarkdown(event: RunEvent) {
+  if (event.event_type === "process.output") {
+    return event.stream === "stdout";
+  }
+  if (event.event_type === "codex.event") {
+    return Boolean(codexDisplayText(event));
+  }
+  if (event.event_type === "run.final") {
+    return Boolean(event.payload.final_message || event.payload.error_message);
+  }
+  return false;
+}
+
+
 function transcriptView(event: RunEvent) {
   if (event.event_type === "run.state") {
     return {
       role: "State",
       kind: "systemMessage",
       text: `Run state changed to ${event.payload.status ?? "unknown"}`,
+      markdown: false,
       hidden: false,
     };
   }
@@ -176,6 +213,7 @@ function transcriptView(event: RunEvent) {
       role: "Final",
       kind: event.payload.status === "failed" ? "errorMessage" : "systemMessage",
       text: text || `Run ${event.payload.status ?? "finished"}`,
+      markdown: Boolean(text),
       hidden: false,
     };
   }
@@ -184,14 +222,25 @@ function transcriptView(event: RunEvent) {
       role: "Runner",
       kind: "errorMessage",
       text: event.payload.message ? String(event.payload.message) : "Runner error",
+      markdown: false,
       hidden: false,
     };
   }
   if (event.event_type === "process.output") {
+    if (event.stream === "stderr") {
+      return {
+        role: "stderr",
+        kind: "errorMessage terminalMessage",
+        text: "",
+        markdown: false,
+        hidden: true,
+      };
+    }
     return {
       role: event.stream,
-      kind: event.stream === "stderr" ? "errorMessage terminalMessage" : "terminalMessage",
+      kind: event.stream === "stdout" ? "assistantMessage" : "terminalMessage",
       text: eventSummary(event),
+      markdown: event.stream === "stdout",
       hidden: false,
     };
   }
@@ -200,6 +249,7 @@ function transcriptView(event: RunEvent) {
     role: "Codex",
     kind: "assistantMessage",
     text,
+    markdown: true,
     hidden: !codexDisplayText(event),
   };
 }
@@ -382,6 +432,7 @@ export function RunHistory(props: {
 
 export function RunDetail(props: { run: Run | null; active: boolean }) {
   const { events, state } = useRunEventStream(props.run?.id ?? null, Boolean(props.run));
+  const visibleEvents = visibleOutputEvents(events);
 
   if (!props.run) {
     return (
@@ -422,16 +473,16 @@ export function RunDetail(props: { run: Run | null; active: boolean }) {
           <h4>Output stream</h4>
           <p>{streamStateLabel(state, props.active)}</p>
         </div>
-        <span className="eventCount">{events.length} events</span>
+        <span className="eventCount">{visibleEvents.length} events</span>
       </div>
 
       <div className="outputViewport" role="log" aria-live="polite" aria-label="Run output events">
-        {events.length === 0 ? (
+        {visibleEvents.length === 0 ? (
           <div className="outputEmpty">
             {state === "error" ? "Unable to open SSE stream. Stored events will still load on refresh." : "No events recorded yet."}
           </div>
         ) : (
-          events.map((event) => (
+          visibleEvents.map((event) => (
             <Fragment key={`${event.run_id}-${event.seq}`}>
               <div className={`eventLine event-${event.event_type.replace(".", "-")}`}>
                 <span className="eventMeta">
@@ -439,7 +490,11 @@ export function RunDetail(props: { run: Run | null; active: boolean }) {
                   <span>{event.event_type}</span>
                   <span>{event.stream}</span>
                 </span>
-                <pre>{eventSummary(event)}</pre>
+                {shouldRenderEventMarkdown(event) ? (
+                  <MarkdownContent compact>{eventSummary(event)}</MarkdownContent>
+                ) : (
+                  <pre>{eventSummary(event)}</pre>
+                )}
                 {event.event_type === "codex.event" && event.payload.raw !== undefined ? (
                   <details>
                     <summary>raw</summary>
@@ -455,7 +510,7 @@ export function RunDetail(props: { run: Run | null; active: boolean }) {
       {props.run.final_message ? (
         <div className="finalMessage">
           <h4>Final message</h4>
-          <p>{props.run.final_message}</p>
+          <MarkdownContent compact>{props.run.final_message}</MarkdownContent>
         </div>
       ) : null}
     </section>

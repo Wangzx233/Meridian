@@ -246,8 +246,12 @@ export function TaskSessionPanel(props: {
     Boolean(props.task && props.activeRun && isActiveRunStatus(props.activeRun.status)) &&
     props.task?.status !== "done" &&
     props.task?.status !== "archived";
-  const canMarkDone = Boolean(props.task) && (props.task?.status === "open" || props.task?.status === "waiting_user");
-  const canDraftMemory = canMarkDone && !taskHasActiveRun;
+  const canMarkDone =
+    Boolean(props.task) &&
+    !taskHasActiveRun &&
+    (props.task?.status === "open" || props.task?.status === "waiting_user");
+  const canDraftMemory = canMarkDone;
+  const canSaveMemoryContext = Boolean(props.project && props.task && taskMemoryHasContent(taskMemory));
   const hasObservedSession = Boolean(props.task?.codex_session_id || props.runs.some((run) => run.codex_session_id));
   const canCompact = canSend && hasObservedSession;
   const canChangeGoal = canSend && hasObservedSession;
@@ -388,8 +392,7 @@ export function TaskSessionPanel(props: {
     setSelectedContextIds([]);
   };
 
-  const submitDone = (event: FormEvent) => {
-    event.preventDefault();
+  const markTaskDone = () => {
     if (!canMarkDone) {
       return;
     }
@@ -397,6 +400,34 @@ export function TaskSessionPanel(props: {
     props.onMarkDone({
       summary: memory.problem,
       memory,
+    });
+  };
+
+  const saveMemoryContext = (event: FormEvent) => {
+    event.preventDefault();
+    if (!props.project || !props.task) {
+      return;
+    }
+    const memory = trimTaskMemoryDraft(taskMemory);
+    const content = formatTaskMemoryContext(memory, {
+      problem: t("complete.memoryNote"),
+      changes: t("complete.changes"),
+      verification: t("complete.verification"),
+      files: t("complete.files"),
+      stale_conditions: t("complete.risks"),
+    });
+    if (!content) {
+      return;
+    }
+    props.onCreateContext({
+      server_id: props.project.server_id,
+      project_id: props.project.id,
+      scope: "task",
+      task_id: props.task.id,
+      type: "task_summary",
+      title: t("complete.contextTitle", { title: props.task.title }),
+      content,
+      tags: ["task-summary"],
     });
   };
 
@@ -452,7 +483,7 @@ export function TaskSessionPanel(props: {
   }, [memoryDraftRunId, props.runs, props.onNotice, t]);
 
   const summaryPanel = (
-    <form className="markDoneBox contextSummaryBox" onSubmit={submitDone}>
+    <form className="memorySummaryBox contextSummaryBox" onSubmit={saveMemoryContext}>
       <div className="boxHeader">
         <div>
           <h3>{t("complete.title")}</h3>
@@ -473,6 +504,15 @@ export function TaskSessionPanel(props: {
           {memoryDetailsOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
           {t("complete.sections")}
         </button>
+        <button
+          className="primaryButton compact"
+          type="submit"
+          disabled={!canSaveMemoryContext || props.creatingContext}
+          title={t("complete.saveContextTitle")}
+        >
+          {props.creatingContext ? <Loader2 className="spin" size={15} /> : <Save size={15} />}
+          {t("complete.saveContext")}
+        </button>
       </div>
       <label htmlFor="memory-problem">{t("complete.memoryNote")}</label>
       <textarea
@@ -480,7 +520,7 @@ export function TaskSessionPanel(props: {
         rows={5}
         value={taskMemory.problem}
         onChange={(event) => updateMemoryField("problem", event.target.value)}
-        disabled={!canMarkDone || props.markingDone}
+        disabled={props.creatingContext}
         placeholder={t("complete.memoryPlaceholder")}
       />
       {memoryDetailsOpen ? (
@@ -491,7 +531,7 @@ export function TaskSessionPanel(props: {
               rows={3}
               value={taskMemory.changes}
               onChange={(event) => updateMemoryField("changes", event.target.value)}
-              disabled={!canMarkDone || props.markingDone}
+              disabled={props.creatingContext}
               placeholder={t("complete.changesPlaceholder")}
             />
           </label>
@@ -501,7 +541,7 @@ export function TaskSessionPanel(props: {
               rows={3}
               value={taskMemory.verification}
               onChange={(event) => updateMemoryField("verification", event.target.value)}
-              disabled={!canMarkDone || props.markingDone}
+              disabled={props.creatingContext}
               placeholder={t("complete.verificationPlaceholder")}
             />
           </label>
@@ -511,7 +551,7 @@ export function TaskSessionPanel(props: {
               rows={3}
               value={taskMemory.files}
               onChange={(event) => updateMemoryField("files", event.target.value)}
-              disabled={!canMarkDone || props.markingDone}
+              disabled={props.creatingContext}
               placeholder={t("complete.filesPlaceholder")}
             />
           </label>
@@ -521,16 +561,12 @@ export function TaskSessionPanel(props: {
               rows={3}
               value={taskMemory.stale_conditions}
               onChange={(event) => updateMemoryField("stale_conditions", event.target.value)}
-              disabled={!canMarkDone || props.markingDone}
+              disabled={props.creatingContext}
               placeholder={t("complete.risksPlaceholder")}
             />
           </label>
         </div>
       ) : null}
-      <button className="doneButton" type="submit" disabled={!canMarkDone || props.markingDone}>
-        {props.markingDone ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
-        {t("complete.markDone")}
-      </button>
     </form>
   );
 
@@ -721,6 +757,9 @@ export function TaskSessionPanel(props: {
               canInterrupt={canInterrupt}
               canCompact={canCompact}
               canChangeGoal={canChangeGoal}
+              canMarkDone={canMarkDone}
+              markingDone={props.markingDone}
+              onMarkDone={markTaskDone}
               blockedReason={
                 taskHasActiveRun
                   ? t("session.runActive")
@@ -908,6 +947,35 @@ function isGoalCommand(message: string) {
 
 function taskMemoryDraftHasDetails(memory: TaskMemoryDraft): boolean {
   return Boolean(memory.changes.trim() || memory.verification.trim() || memory.files.trim() || memory.stale_conditions.trim());
+}
+
+function taskMemoryHasContent(memory: TaskMemoryDraft): boolean {
+  return Boolean(
+    memory.problem.trim() ||
+      memory.changes.trim() ||
+      memory.verification.trim() ||
+      memory.files.trim() ||
+      memory.stale_conditions.trim(),
+  );
+}
+
+type TaskMemoryContextField = "problem" | "changes" | "verification" | "files" | "stale_conditions";
+
+function formatTaskMemoryContext(memory: TaskMemoryDraft, labels: Record<TaskMemoryContextField, string>): string {
+  const sections: Array<[TaskMemoryContextField, string]> = [
+    ["problem", memory.problem],
+    ["changes", memory.changes],
+    ["verification", memory.verification],
+    ["files", memory.files],
+    ["stale_conditions", memory.stale_conditions],
+  ];
+  return sections
+    .map(([key, value]) => {
+      const text = value.trim();
+      return text ? `${labels[key]}:\n${text}` : "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function buildTaskMemoryDraftPrompt(language: "en" | "zh"): string {

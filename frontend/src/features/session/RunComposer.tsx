@@ -61,6 +61,9 @@ export function RunComposer(props: {
   canInterrupt: boolean;
   canCompact: boolean;
   canChangeGoal: boolean;
+  canMarkDone: boolean;
+  markingDone: boolean;
+  onMarkDone: () => void;
   blockedReason?: string;
   submitting: boolean;
   onSubmit: (event: FormEvent) => void;
@@ -189,6 +192,16 @@ export function RunComposer(props: {
             {t("composer.interrupt")}
           </button>
         ) : null}
+        <button
+          className="doneButton"
+          type="button"
+          onClick={props.onMarkDone}
+          disabled={!props.canMarkDone || props.submitting || props.interrupting || props.markingDone}
+          title={t("complete.markDoneTitle")}
+        >
+          {props.markingDone ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
+          {t("complete.markDone")}
+        </button>
       </div>
     </form>
   );

@@ -248,7 +248,7 @@ summary {
 .panelHeader p,
 .sessionTitleBlock p,
 .composerToolbar p,
-.markDoneBox p,
+.memorySummaryBox p,
 .streamHeader p,
 .detailHeader p {
   margin: 2px 0 0;
@@ -1097,7 +1097,7 @@ summary {
 
 .composerToolbar label:first-child,
 .compactForm > label,
-.markDoneBox > label {
+.memorySummaryBox > label {
   color: var(--text);
   font-size: 12px;
   font-weight: 700;
@@ -1154,11 +1154,13 @@ textarea:disabled {
 }
 
 .composerActions {
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .targetHint {
+  margin-right: auto;
   color: var(--text-subtle);
   font-size: 12px;
 }
@@ -2067,16 +2069,39 @@ textarea:disabled {
 }
 
 .runPicker {
-  min-width: 210px;
+  min-width: min(360px, 45%);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
 }
 
 .runPicker select {
+  width: 100%;
   min-width: 0;
   text-overflow: ellipsis;
+}
+
+.markdownSwitch {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.markdownSwitch input {
+  width: 14px;
+  min-height: 14px;
+  margin: 0;
+  accent-color: var(--primary);
 }
 
 .conversationViewport,
@@ -2113,14 +2138,19 @@ textarea:disabled {
 }
 
 .messageBlock p,
-.messageBlock pre {
+.messageBlock pre,
+.markdownContent {
   margin: 0;
   min-width: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
   color: var(--text);
   font-size: 13px;
   line-height: 1.55;
+}
+
+.messageBlock p,
+.messageBlock pre {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .userMessage p {
@@ -2149,6 +2179,146 @@ textarea:disabled {
 
 .errorMessage pre {
   color: var(--danger);
+}
+
+.errorMessage .markdownContent {
+  color: var(--danger);
+}
+
+.markdownContent {
+  overflow-wrap: anywhere;
+}
+
+.markdownContent > :first-child {
+  margin-top: 0;
+}
+
+.markdownContent > :last-child {
+  margin-bottom: 0;
+}
+
+.markdownContent p,
+.markdownContent ul,
+.markdownContent ol,
+.markdownContent blockquote,
+.markdownContent pre,
+.markdownContent table {
+  margin: 0 0 9px;
+}
+
+.markdownContent h1,
+.markdownContent h2,
+.markdownContent h3,
+.markdownContent h4,
+.markdownContent h5,
+.markdownContent h6 {
+  margin: 14px 0 7px;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.markdownContent h1 {
+  font-size: 18px;
+}
+
+.markdownContent h2 {
+  font-size: 16px;
+}
+
+.markdownContent h3,
+.markdownContent h4,
+.markdownContent h5,
+.markdownContent h6 {
+  font-size: 14px;
+}
+
+.markdownContent ul,
+.markdownContent ol {
+  padding-left: 18px;
+}
+
+.markdownContent li {
+  margin: 3px 0;
+}
+
+.markdownContent input[type="checkbox"] {
+  width: 14px;
+  min-height: 14px;
+  margin: 0 6px 0 0;
+  vertical-align: -2px;
+  accent-color: var(--primary);
+}
+
+.markdownContent a {
+  color: var(--primary);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.markdownContent blockquote {
+  padding-left: 10px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-muted);
+}
+
+.markdownContent code {
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
+}
+
+.markdownContent pre {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #111713;
+  color: #edf4ee;
+}
+
+.markdownContent pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.markdownContent table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.markdownContent th,
+.markdownContent td {
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdownContent th {
+  background: var(--surface-subtle);
+  font-weight: 800;
+}
+
+.markdownContent hr {
+  height: 1px;
+  margin: 12px 0;
+  border: 0;
+  background: var(--border);
+}
+
+.markdownContent.isCompact {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .messageBlock.final {
@@ -2433,7 +2603,7 @@ textarea:disabled {
 .detailHeader h3,
 .streamHeader h4,
 .finalMessage h4,
-.markDoneBox h3 {
+.memorySummaryBox h3 {
   margin: 0;
   font-size: 13px;
   line-height: 1.25;
@@ -2521,6 +2691,43 @@ textarea:disabled {
   color: #edf4ee;
 }
 
+.eventLine .markdownContent {
+  color: #edf4ee;
+}
+
+.eventLine .markdownContent h1,
+.eventLine .markdownContent h2,
+.eventLine .markdownContent h3,
+.eventLine .markdownContent h4,
+.eventLine .markdownContent h5,
+.eventLine .markdownContent h6 {
+  color: #edf4ee;
+}
+
+.eventLine .markdownContent a {
+  color: #a8d8b9;
+}
+
+.eventLine .markdownContent blockquote {
+  border-left-color: rgb(255 255 255 / 28%);
+  color: #c9d6ce;
+}
+
+.eventLine .markdownContent code {
+  border-color: rgb(255 255 255 / 14%);
+  background: rgb(255 255 255 / 8%);
+  color: #edf4ee;
+}
+
+.eventLine .markdownContent th,
+.eventLine .markdownContent td {
+  border-color: rgb(255 255 255 / 14%);
+}
+
+.eventLine .markdownContent th {
+  background: rgb(255 255 255 / 8%);
+}
+
 .eventLine details {
   margin-top: 8px;
 }
@@ -2546,14 +2753,13 @@ textarea:disabled {
   background: var(--surface);
 }
 
-.finalMessage p {
+.finalMessage p,
+.finalMessage .markdownContent {
   margin: 6px 0 0;
   color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
 }
 
-.markDoneBox {
+.memorySummaryBox {
   min-height: 0;
   height: 100%;
   display: flex;
@@ -2576,7 +2782,7 @@ textarea:disabled {
   min-height: 110px;
 }
 
-.contextSummaryBox .doneButton {
+.contextSummaryBox .primaryButton {
   position: sticky;
   bottom: 0;
   z-index: 2;
@@ -2590,7 +2796,7 @@ textarea:disabled {
   min-height: 82px;
 }
 
-.markDoneBox textarea {
+.memorySummaryBox textarea {
   min-height: 54px;
 }
 
@@ -3051,7 +3257,7 @@ textarea:disabled {
     z-index: 5;
   }
 
-  .markDoneBox,
+  .memorySummaryBox,
   .contextSummaryBox {
     height: auto;
   }

@@ -128,7 +128,7 @@ const translations: Record<Language, Record<string, string>> = {
 
     "context.aria": "Manual context picker",
     "context.pickTab": "Pick context",
-    "context.summaryTab": "Summarize",
+    "context.summaryTab": "Store summary",
     "context.search": "Search context",
     "context.filterPlaceholder": "Filter context",
     "context.filterScope": "Filter context scope",
@@ -151,6 +151,9 @@ const translations: Record<Language, Record<string, string>> = {
     "complete.title": "Task summary",
     "complete.draft": "Draft memory",
     "complete.draftTitle": "Ask Codex to draft a user-editable memory",
+    "complete.saveContext": "Save to context",
+    "complete.saveContextTitle": "Save this summary as a task context item",
+    "complete.contextTitle": "Summary: {title}",
     "complete.sections": "Sections",
     "complete.memoryNote": "Memory note",
     "complete.memoryPlaceholder": "Optional short note",
@@ -163,6 +166,7 @@ const translations: Record<Language, Record<string, string>> = {
     "complete.risks": "Risks",
     "complete.risksPlaceholder": "Follow-up risks",
     "complete.markDone": "Mark done",
+    "complete.markDoneTitle": "Mark this task done without saving context",
 
     "nav.aria": "Server and project navigation",
     "nav.expand": "Expand navigation",
@@ -405,7 +409,7 @@ const translations: Record<Language, Record<string, string>> = {
 
     "context.aria": "手动上下文选择",
     "context.pickTab": "勾选上下文",
-    "context.summaryTab": "总结上下文",
+    "context.summaryTab": "总结入库",
     "context.search": "搜索上下文",
     "context.filterPlaceholder": "筛选上下文",
     "context.filterScope": "筛选上下文范围",
@@ -428,6 +432,9 @@ const translations: Record<Language, Record<string, string>> = {
     "complete.title": "任务总结",
     "complete.draft": "生成草稿",
     "complete.draftTitle": "让 Codex 生成可编辑的完成记忆",
+    "complete.saveContext": "上下文入库",
+    "complete.saveContextTitle": "将这份总结保存为任务上下文",
+    "complete.contextTitle": "总结：{title}",
     "complete.sections": "分区",
     "complete.memoryNote": "记忆摘要",
     "complete.memoryPlaceholder": "可选短摘要",
@@ -440,6 +447,7 @@ const translations: Record<Language, Record<string, string>> = {
     "complete.risks": "风险",
     "complete.risksPlaceholder": "后续风险",
     "complete.markDone": "标记完成",
+    "complete.markDoneTitle": "只标记当前任务完成，不保存上下文",
 
     "nav.aria": "服务器和项目导航",
     "nav.expand": "展开导航",

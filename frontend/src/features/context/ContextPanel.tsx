@@ -10,7 +10,6 @@ import {
   Copy,
   Download,
   Edit3,
-  FileText,
   FolderKanban,
   FolderOpen,
   History,
@@ -197,7 +196,7 @@ export function ContextPanel(props: {
           className={activeView === "summary" ? "isSelected" : ""}
           onClick={() => setActiveView("summary")}
         >
-          <CheckCircle2 size={14} />
+          <Save size={14} />
           <span>{t("context.summaryTab")}</span>
         </button>
       </div>

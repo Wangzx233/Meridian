@@ -16,22 +16,22 @@ Use this checklist for each public release.
 
 Run from the repository root:
 
-```powershell
+```bash
 go test ./...
 go vet ./...
 ```
 
 Run from `frontend/`:
 
-```powershell
+```bash
 npm ci
 npm run build
 ```
 
 Build runner artifacts from the repository root:
 
-```powershell
-.\scripts\build-runner-artifacts.ps1
+```bash
+sh ./scripts/build-runner-artifacts.sh
 ```
 
 Expected runner outputs:
@@ -44,8 +44,8 @@ Expected runner outputs:
 
 ## 3. Smoke Test
 
-- Apply migrations against a disposable PostgreSQL database.
-- Start the backend with `RUNNER_ARTIFACT_DIR` pointing at the built artifacts.
+- Start the backend against a disposable PostgreSQL database with
+  `RUNNER_ARTIFACT_DIR` pointing at the built artifacts.
 - Start the frontend against that backend.
 - Create or select a server, project, and task.
 - Connect a runner.
@@ -57,7 +57,7 @@ Expected runner outputs:
 
 Create and push a version tag:
 
-```powershell
+```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
@@ -72,6 +72,6 @@ GitHub Actions and provide the existing tag name.
 
 - Check the published release assets and checksums.
 - Deploy with the normal deployment workflow.
-- Apply migrations before bringing up the new backend.
+- Confirm the backend applied migrations during startup.
 - Reinstall or self-update connected runners when the runner changed.
 - Verify the public site login, runner install commands, and one Codex turn.

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"codex-task-workbench/backend/internal/control"
+	"codex-task-workbench/backend/internal/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -23,6 +24,13 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if env("MERIDIAN_AUTO_MIGRATE", "true") != "false" {
+		if err := migrations.Up(ctx, dsn, os.Getenv("MIGRATIONS_DIR"), slog.Default()); err != nil {
+			slog.Error("migrate database", "error", err)
+			os.Exit(1)
+		}
+	}
 
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {

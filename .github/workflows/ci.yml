@@ -54,7 +54,7 @@ jobs:
 
   runner-artifacts:
     name: Runner artifacts
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,8 +66,7 @@ jobs:
           cache: true
 
       - name: Build runner artifacts
-        shell: pwsh
-        run: .\scripts\build-runner-artifacts.ps1
+        run: sh ./scripts/build-runner-artifacts.sh
 
       - name: Upload runner artifacts
         uses: actions/upload-artifact@v4

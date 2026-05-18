@@ -45,7 +45,8 @@ Details: [Product Scope](docs/agent-guides/product-scope.md)
 | Implementation workflow, checks, docs update rules | [docs/agent-guides/development-workflow.md](docs/agent-guides/development-workflow.md) |
 | Documentation structure, map pages, ADR rules | [docs/agent-guides/documentation-map.md](docs/agent-guides/documentation-map.md) |
 | Concurrent tasks, Git conflicts, commit and push rules | [docs/agent-guides/concurrent-tasks.md](docs/agent-guides/concurrent-tasks.md) |
-| Local setup, environment variables, deployment | [README.md](README.md) |
+| Quick start and local setup | [README.md](README.md) |
+| Deployment details and environment variables | [docs/deployment.md](docs/deployment.md) |
 | Contribution and CI expectations | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Architectural decisions and rationale | [docs/adr/README.md](docs/adr/README.md) |
 | Release preparation | [docs/release-checklist.md](docs/release-checklist.md) |
@@ -57,7 +58,7 @@ Details: [Product Scope](docs/agent-guides/product-scope.md)
 - `runner/`: Go runner agent.
 - `frontend/`: React, TypeScript, Vite UI.
 - `db/migrations/`: PostgreSQL migrations.
-- `docs/`: requirements, architecture, API, release, and agent guides.
+- `docs/`: requirements, architecture, API, deployment, release, and agent guides.
 - `scripts/`: local helper scripts.
 
 ## Concurrency Default

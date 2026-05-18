@@ -47,6 +47,7 @@ AGENTS.md
     requirements.md
     architecture.md
     api-contract.md
+    deployment.md
     release-checklist.md
     adr/
 README.md
@@ -61,6 +62,8 @@ SECURITY.md
 - Codex invocation and run lifecycle: `docs/agent-guides/codex-execution.md`.
 - Control-plane and runner architecture: `docs/architecture.md`.
 - API, SSE, and runner WebSocket contract: `docs/api-contract.md`.
+- Deployment, external databases, and environment variables:
+  `docs/deployment.md`.
 - Development workflow and checks: `docs/agent-guides/development-workflow.md`
   and `CONTRIBUTING.md`.
 - Concurrent task and Git behavior: `docs/agent-guides/concurrent-tasks.md`.

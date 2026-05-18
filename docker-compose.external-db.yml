@@ -3,13 +3,8 @@ services:
     profiles:
       - bundled-db
 
-  migrate:
-    depends_on: !reset []
-    networks:
-      - default
-      - external_database
-
   backend:
+    depends_on: !reset []
     networks:
       - default
       - external_database

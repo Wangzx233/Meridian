@@ -15,7 +15,7 @@ Prerequisites:
 
 Install frontend dependencies before frontend work:
 
-```powershell
+```bash
 cd frontend
 npm ci
 ```
@@ -27,7 +27,7 @@ repository root.
 
 Run these before opening or merging a pull request:
 
-```powershell
+```bash
 go test ./...
 go vet ./...
 cd frontend
@@ -37,8 +37,8 @@ npm run build
 Build runner artifacts when runner behavior, install scripts, release packaging,
 or backend artifact-serving behavior changes:
 
-```powershell
-.\scripts\build-runner-artifacts.ps1
+```bash
+sh ./scripts/build-runner-artifacts.sh
 ```
 
 GitHub Actions runs the same core checks on pull requests and pushes to `main`.
@@ -70,7 +70,7 @@ When changing runner protocol behavior, update:
 
 - `docs/api-contract.md`
 - `docs/architecture.md` when the system shape changes
-- `README.md` if setup or operations change
+- `README.md` and `docs/deployment.md` if setup or operations change
 
 ## Release Process
 

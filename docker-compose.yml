@@ -16,7 +16,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  migrate:
+  backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -26,28 +26,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgres://${POSTGRES_USER:-meridian}:${POSTGRES_PASSWORD:-meridian}@postgres:5432/${POSTGRES_DB:-meridian}?sslmode=disable}
-      MIGRATIONS_DIR: /app/db/migrations
-    command: ["/app/migrate", "up"]
-
-  backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-      args:
-        BUILD_COMMIT: ${MERIDIAN_BUILD_COMMIT:-dev}
-    image: meridian-backend:latest
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
     restart: unless-stopped
-    ports:
-      - "${MERIDIAN_HTTP_BIND:-127.0.0.1}:${MERIDIAN_BACKEND_HTTP_PORT:-18091}:8080"
     environment:
       DATABASE_URL: ${MERIDIAN_DATABASE_URL:-postgres://${POSTGRES_USER:-meridian}:${POSTGRES_PASSWORD:-meridian}@postgres:5432/${POSTGRES_DB:-meridian}?sslmode=disable}
       BACKEND_ADDR: :8080
       MIGRATIONS_DIR: /app/db/migrations
+      MERIDIAN_AUTO_MIGRATE: ${MERIDIAN_AUTO_MIGRATE:-true}
       RUNNER_ARTIFACT_DIR: /app/artifacts/runner
       WORKBENCH_AUTH_USERS: ${WORKBENCH_AUTH_USERS:-}
       WORKBENCH_AUTH_SESSION_SECRET: ${WORKBENCH_AUTH_SESSION_SECRET:-}
@@ -66,8 +50,7 @@ services:
       - backend
     restart: unless-stopped
     ports:
-      - "${MERIDIAN_HTTP_BIND:-127.0.0.1}:${MERIDIAN_HTTP_PORT:-18080}:8080"
-      - "${MERIDIAN_HTTP_BIND:-127.0.0.1}:${MERIDIAN_FRONTEND_LEGACY_HTTP_PORT:-18092}:8080"
+      - "${MERIDIAN_HTTP_BIND:-0.0.0.0}:${MERIDIAN_HTTP_PORT:-18080}:8080"
 
 volumes:
   postgres_data:

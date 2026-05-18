@@ -71,12 +71,6 @@ export function RunnerInstallPopover(props: {
         </label>
         <div className="installCommandList">
           <CopyCommand
-            label="Windows"
-            command={windowsInstallCommand}
-            copyLabel={t("runner.copy", { platform: "Windows" })}
-            onCopied={() => copied("Windows")}
-          />
-          <CopyCommand
             label="Linux"
             command={shellInstallCommand}
             copyLabel={t("runner.copy", { platform: "Linux" })}
@@ -87,6 +81,12 @@ export function RunnerInstallPopover(props: {
             command={shellInstallCommand}
             copyLabel={t("runner.copy", { platform: "macOS" })}
             onCopied={() => copied("macOS")}
+          />
+          <CopyCommand
+            label="Windows"
+            command={windowsInstallCommand}
+            copyLabel={t("runner.copy", { platform: "Windows" })}
+            onCopied={() => copied("Windows")}
           />
         </div>
         <InlineNotice tone="info">{t("runner.remoteNotice")}</InlineNotice>

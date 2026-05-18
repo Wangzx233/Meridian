@@ -12,215 +12,125 @@ English | [中文](README.md)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%2B-4169E1?logo=postgresql&logoColor=white)
 ![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?logo=githubactions&logoColor=white)
 
-Meridian is a task workbench for running Codex CLI in real project directories.
+Meridian is a web console for managing project-scoped Codex CLI work across
+servers. It is not a new agent runtime, not an IDE, and not a replacement for
+Codex. A small runner on each target machine invokes the real local Codex CLI
+inside the real project directory.
 
-It is not a new AI agent, not an IDE, and not an app that replaces Codex.
-Meridian does one narrower, more auditable job: it turns Codex CLI executions
-scattered across servers and project directories into long-lived tasks that can
-be queued, observed, resumed, continued, and manually completed.
-
-## What It Actually Does
-
-Codex CLI is strong at doing real coding work inside a project directory. Once
-you have multiple servers, multiple projects, and multiple unfinished tasks,
-plain terminals become hard to manage:
-
-- You need to remember which machine and working directory each task belongs to.
-- You need to keep the Codex session id so later turns can resume.
-- You need to know whether a run succeeded, failed, was canceled, or is simply
-  waiting for the user to continue.
-- You need context sources to stay explicit instead of silently injecting hidden
-  material.
-- You need runner install, runner status, run output, and project file actions
-  in one control surface.
-
-Meridian provides that task control plane. The user selects
-`Server -> Project -> Task` in the web UI and sends one instruction per turn.
-The runner on the target server invokes the local Codex CLI in the real project
-directory. The backend stores tasks, runs, events, context items, and Codex
-session ids. A task is complete only when the user manually marks it done.
-
-The runner invokes the real Codex CLI directly:
-
-```bash
-codex --cd <project_workdir> exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --json -
-codex --cd <project_workdir> exec resume --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --json <session_id> -
-```
-
-### Why Not Hermes / OpenClaw
-
-Projects like Hermes and OpenClaw are closer to general-purpose agents or
-personal automation platforms. They typically emphasize model and tool
-integrations, long-term memory, skill extension, messaging channels, autonomous
-execution, and broad personal or business automation.
-
-Meridian intentionally does not take that path. It does not build a new agent
-runtime, choose models for you, create an automatic skill system, build a
-knowledge graph, or turn tasks into autonomous workflows. It manages one
-project-scoped Codex CLI workflow: which server, which project directory, which
-task, which Codex session, and what happened in every run.
-
-If you want a general assistant that learns, talks across channels, and connects
-to many tools, Hermes / OpenClaw may be a better fit. If you already want Codex
-CLI as the coding executor and need a multi-project, multi-server, resumable
-task console, Meridian is aimed at that gap.
-
-### Why Not IDE + AI
-
-IDE + AI is best for one developer sitting in an editor. Its strengths are
-file-local context, completion, navigation, review, and interactive editing.
-
-Meridian solves a different problem: running Codex CLI tasks in real project
-directories on real servers, then continuing those tasks over time. It does not
-try to become a full browser IDE or move the project into the web app. You can
-keep using your own IDE; Meridian manages Codex turns that need server-local
-execution, observation, and resume.
-
-### Why Not Codex App / Plain Codex CLI
-
-If you only run Codex once on one project from one machine, plain Codex CLI or a
-Codex app is simpler.
-
-Meridian becomes useful when:
-
-- You maintain multiple projects across different servers or working
-  directories.
-- A task needs multiple Codex turns instead of one run.
-- You need run history, failure details, event streams, and final states.
-- You want runner install, runner update, artifact distribution, and run entry
-  points in one place.
-- You need a clear distinction between "run succeeded" and "task is done."
-
-### Differentiation
-
-| Meridian choice | Difference |
-| --- | --- |
-| Reuse the real Codex CLI | No replacement agent and no change to Codex CLI's core behavior. |
-| Project directory first | Every run executes in the configured real `workdir`. |
-| Long-lived tasks | A successful run does not close the task; users can keep adding turns. |
-| Store Codex session ids | Later turns in the same task can resume the original Codex session. |
-| Explicit context selection | Context items are small and visible; v1 avoids automatic recommendation or hidden injection. |
-| Runner runs on target servers | Supports multiple servers and projects instead of binding to the current local IDE. |
-| Control plane records state | Tasks, runs, events, and runner status are visible in one system. |
-| Infrastructure first | CI, vet, frontend build, runner artifact build, and release checklist are part of the project workflow. |
+Meridian is useful when one terminal is no longer enough: multiple machines,
+multiple projects, long-running tasks, resumable Codex sessions, visible run
+history, and explicit user-selected context.
 
 ## Quick Start
 
-### Docker Compose
-
-The recommended open-source trial path is Docker Compose. It starts
-PostgreSQL, applies migrations, builds runner artifacts, starts the backend,
-and serves the web UI with `/api` and WebSocket traffic proxied to the backend.
+Docker Compose is the recommended path for open-source users. It starts
+PostgreSQL, starts the backend, automatically applies database migrations,
+builds runner artifacts for the in-app installer, and serves the web UI.
 
 ```bash
-docker compose up --build
+git clone https://github.com/Wangzx233/Meridian.git
+cd Meridian
+docker compose up -d --build
 ```
 
-Open:
+Open Meridian:
 
 ```text
-http://127.0.0.1:18080
+http://<server-ip>:18080
 ```
 
-On the first browser visit, create the initial admin account. The local Compose
-profile stores PostgreSQL data in the `postgres_data` Docker volume.
+For a local-only trial on the same machine, `http://127.0.0.1:18080` also works.
+The default Compose bind address is `0.0.0.0`, so a self-hosted server is
+reachable without extra bind-address configuration. On first browser visit,
+create the initial admin account.
 
-To customize the port, database password, or auth settings:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Then edit `.env` and restart:
+To customize the port, database password, external database, or auth settings:
 
 ```bash
-docker compose up --build
+cp .env.example .env
+vi .env
+docker compose up -d --build
 ```
 
-For a shared or internet-facing deployment, set `MERIDIAN_HTTP_BIND=0.0.0.0`,
-put Meridian behind HTTPS, and set `WORKBENCH_AUTH_COOKIE_SECURE=true`.
+Use HTTPS for shared or internet-facing deployments. If Meridian is only exposed
+through a local reverse proxy, set `MERIDIAN_HTTP_BIND=127.0.0.1` in `.env`.
 
-### Source Development
+## Connect A Runner
 
-Use the source workflow when developing Meridian itself or when you want to run
-the frontend and backend separately.
+Install Codex CLI on every machine that will execute tasks. Then use Meridian
+itself to install the runner:
 
-Required tools:
+1. Open the web UI and create or select a server.
+2. Click the runner install button in the top-right corner.
+3. Set the Control URL to the URL reachable from the target machine.
+4. Copy the Linux, macOS, or Windows command shown by the UI and run it on the
+   target machine.
+5. Create a project for that server and set `workdir` to the real project
+   directory.
 
-- Go 1.25 or newer.
-- Node.js 20.19 or newer, plus npm.
-- PostgreSQL with the `pgcrypto` extension available.
-- Codex CLI installed on every machine where a runner will execute tasks.
-- PowerShell is the easiest path for Windows local development because the
-  runner artifact script is PowerShell-based.
+Do not use `127.0.0.1` in the installer for a remote runner unless Meridian is
+running on that same machine. The backend image and the source deployment flow
+both build the runner artifacts used by these install endpoints; you should not
+need to handcraft runner download commands.
 
-Start PostgreSQL:
+## Manual Source Deployment
 
-```powershell
-docker run --name meridian-postgres `
-  -e POSTGRES_DB=meridian_dev `
-  -e POSTGRES_USER=postgres `
-  -e POSTGRES_PASSWORD=postgres `
-  -p 55433:5432 `
-  -d postgres:16-alpine
-```
+Use this path when you do not want Docker Compose to run the app stack. The
+backend applies migrations on startup by default, so a first deployment does not
+need a separate migration command.
 
-Set the database URL and apply migrations:
+```bash
+sh ./scripts/build-runner-artifacts.sh
 
-```powershell
-$env:DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:55433/meridian_dev?sslmode=disable"
-go run ./backend/cmd/migrate up
-```
+cd frontend
+npm ci
+npm run build
+cd ..
 
-If migrations live outside the repository root, set `MIGRATIONS_DIR`:
-
-```powershell
-$env:MIGRATIONS_DIR = "D:\go\workplace\db\migrations"
-```
-
-Build runner artifacts for the install endpoints:
-
-```powershell
-.\scripts\build-runner-artifacts.ps1
-```
-
-If `go` is not on `PATH`, set `GO_EXE`:
-
-```powershell
-$env:GO_EXE = "C:\Users\DELL\sdk\go1.26.1\bin\go.exe"
-.\scripts\build-runner-artifacts.ps1
-```
-
-Start the backend:
-
-```powershell
-$env:DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:55433/meridian_dev?sslmode=disable"
-$env:BACKEND_ADDR = "127.0.0.1:18080"
-$env:RUNNER_ARTIFACT_DIR = "D:\go\workplace\artifacts\runner"
+DATABASE_URL='postgres://user:password@db-host:5432/meridian?sslmode=disable' \
+BACKEND_ADDR='0.0.0.0:8080' \
+RUNNER_ARTIFACT_DIR="$PWD/artifacts/runner" \
 go run ./backend/cmd/server
 ```
 
-The API is available at:
+Serve `frontend/dist` with your web server and proxy `/api` plus WebSocket
+traffic to the backend. After the UI is reachable, use the same top-right runner
+install menu to connect target machines.
 
-```text
-http://127.0.0.1:18080/api/v1
+More deployment options, external database settings, and Windows notes are in
+[Deployment Guide](docs/deployment.md).
+
+## Development
+
+Use the source workflow when developing Meridian itself:
+
+```bash
+docker run --name meridian-postgres \
+  -e POSTGRES_DB=meridian_dev \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 55433:5432 \
+  -d postgres:16-alpine
+
+sh ./scripts/build-runner-artifacts.sh
+
+DATABASE_URL='postgres://postgres:postgres@127.0.0.1:55433/meridian_dev?sslmode=disable' \
+BACKEND_ADDR='127.0.0.1:18080' \
+RUNNER_ARTIFACT_DIR="$PWD/artifacts/runner" \
+go run ./backend/cmd/server
 ```
 
-Start the frontend in another shell:
+In another shell:
 
-```powershell
+```bash
 cd frontend
-npm install
-$env:VITE_API_PROXY_TARGET = "http://127.0.0.1:18080"
-$env:VITE_CONTROL_URL = "http://127.0.0.1:18080"
+npm ci
+VITE_API_PROXY_TARGET='http://127.0.0.1:18080' \
+VITE_CONTROL_URL='http://127.0.0.1:18080' \
 npm run dev
 ```
 
-Open:
-
-```text
-http://127.0.0.1:5173
-```
+Open `http://127.0.0.1:5173`.
 
 ## Capabilities
 
@@ -230,10 +140,10 @@ http://127.0.0.1:5173
 | Real project directories | Each project points to a real working directory on one server. |
 | Long-lived tasks | A task can span many Codex turns. A successful run does not complete the task. |
 | Codex session resume | Store the Codex CLI session id and resume later turns in the same task. |
-| Explicit context | Users manually attach a small set of source-visible context items. |
+| Explicit context | Users manually attach small, visible context items. |
 | Live run output | Stream Codex run events from the runner back to the web console. |
 | Project tools | Browse files, do lightweight edits, and run project-local terminal commands. |
-| Runner distribution | Build Windows, Linux, and macOS runner artifacts for backend install endpoints. |
+| Runner distribution | Serve Linux, macOS, and Windows runner installers from the backend. |
 
 ## Architecture
 
@@ -248,6 +158,17 @@ Go backend control plane
   -> local Codex CLI in the project workdir
 ```
 
+## Basic Usage
+
+1. Open the web UI.
+2. Create a server and install its runner from the top-right install menu.
+3. Create a project under that server and set the real `workdir`.
+4. Create a task.
+5. Send one instruction per turn.
+6. Use Output, Terminal, and Files to inspect the project and run state.
+7. Continue until the work is actually complete.
+8. Manually mark the task done.
+
 ## Repository Layout
 
 ```text
@@ -255,235 +176,18 @@ backend/   Go control-plane API
 runner/    Go runner agent that connects to the control plane and invokes Codex CLI
 frontend/  React + TypeScript + Vite web UI
 db/        PostgreSQL migrations
-docs/      Requirements, architecture, API contract, and release checklist
+docs/      Requirements, architecture, API contract, deployment, and release docs
 scripts/   Local helper scripts
 ```
 
-## Basic Usage
-
-1. Open the web UI.
-2. Create a server.
-3. Install and start a runner on that server.
-4. Select the server, then create a project under it.
-5. Set the project `workdir` to the real project directory.
-6. Create a task.
-7. Use Output for Codex logs, Terminal for a project-local shell, and Files for
-   project file inspection and lightweight editing.
-8. Send one instruction per turn.
-9. Continue the task until you are satisfied.
-10. Manually mark the task done.
-
-## Server / Project / Runner Model
-
-| Concept | Role |
-| --- | --- |
-| `Server` | A machine that can run the runner. The important value is `runner_id`. |
-| `Project` | A real working directory on one server. Codex runs in this directory. |
-| `Task` | A real work objective, usually completed over multiple turns. |
-| `Run` / `Turn` | One user instruction and one Codex CLI execution. |
-| `ContextItem` | A manually selected rule, note, log, summary, command, or file hint. |
-| `CodexSession` | The Codex CLI session id used for resume. |
-
-The runner reconnects after network drops or backend restarts. The backend also
-gives a disconnected runner a short grace period before marking the server
-offline.
-
-Each turn can optionally override the Codex model, reasoning effort, and service
-tier:
+## Checks
 
 ```bash
---model gpt-5.5 --config model_reasoning_effort="high" --config service_tier="fast"
-```
-
-Leaving them blank uses the runner machine's local Codex config.
-
-## Installing A Runner
-
-Use the install button in the top-right of the web UI, or call the install
-endpoints directly. For a new machine, do not pass `runner_id`; the installer
-derives a unique id from that machine. Only pass `runner_id=<runner-id>` when
-reinstalling the same server record.
-
-Windows PowerShell:
-
-```powershell
-powershell -ExecutionPolicy Bypass -NoProfile -Command "iex ((iwr -UseBasicParsing -Uri 'http://<control-host>:<port>/api/v1/runner/install.ps1').Content)"
-```
-
-For a machine-level SYSTEM task, run PowerShell as Administrator and add
-`run_as=system`:
-
-```powershell
-powershell -ExecutionPolicy Bypass -NoProfile -Command "iex ((iwr -UseBasicParsing -Uri 'http://<control-host>:<port>/api/v1/runner/install.ps1?run_as=system').Content)"
-```
-
-Linux or macOS:
-
-```bash
-curl -fsSL 'http://<control-host>:<port>/api/v1/runner/install.sh' | sh
-```
-
-On Linux, the installer uses systemd when it is available. In containers or
-other non-systemd environments, it falls back to a standalone `nohup`
-background process under `/opt/codex-task-workbench/runner` and writes
-`run-runner.sh`, `runner.pid`, `runner.log`, and `runner.err.log`. Standalone
-mode does not survive container or host restarts; rerun the installer or start
-`run-runner.sh` manually after a restart.
-
-Do not use `127.0.0.1` on a remote runner machine unless the control plane runs
-on the same machine.
-
-The bootstrap scripts install:
-
-| Platform | Install method |
-| --- | --- |
-| Windows user mode | `%LOCALAPPDATA%\CodexTaskWorkbench\runner` plus a Startup folder command. |
-| Windows SYSTEM mode | A Scheduled Task named `CodexTaskWorkbenchRunner`. |
-| Linux | A systemd service named `codex-task-workbench-runner.service`. |
-| macOS | A launchd daemon named `com.codex-task-workbench.runner`. |
-
-If Codex CLI is not on the target machine's default path, pass a custom path:
-
-```bash
-curl -fsSL 'http://<control-host>:<port>/api/v1/runner/install.sh?codex_path=/usr/local/bin/codex' | sh
-```
-
-## Manual Runner Start
-
-```powershell
-$env:CONTROL_URL = "http://127.0.0.1:18080"
-$env:RUNNER_ID = "local_runner"
-$env:CODEX_PATH = "codex"
-go run ./runner/cmd/runner
-```
-
-Linux or macOS:
-
-```bash
-CONTROL_URL=http://127.0.0.1:18080 \
-RUNNER_ID=local_runner \
-CODEX_PATH=codex \
-go run ./runner/cmd/runner
-```
-
-## Key Environment Variables
-
-### Backend
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `DATABASE_URL` | required | PostgreSQL connection string. |
-| `BACKEND_ADDR` | `:8080` | HTTP listen address. |
-| `RUNNER_ARTIFACT_DIR` | `artifacts/runner` | Directory served by runner artifact endpoints. |
-| `CODEX_BYPASS_APPROVALS_AND_SANDBOX` | `true` | Adds Codex CLI bypass sandbox/approval flags. Set `false` to preserve Codex defaults. |
-| `WORKBENCH_AUTH_USERS` | empty | Comma-separated login accounts such as `admin:password,ops:password2`. Empty enters browser first-run setup. |
-| `WORKBENCH_AUTH_SESSION_SECRET` | required when auth users are set | Secret used to sign browser session cookies. |
-| `WORKBENCH_RUNNER_TOKEN` | required when auth users are set | Bearer token for runner install scripts, runner WebSocket connections, and artifact downloads. |
-| `WORKBENCH_AUTH_COOKIE_SECURE` | `true` | Whether browser session cookies require HTTPS. Set `false` only for local HTTP development. |
-
-### Runner
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `CONTROL_URL` | `http://localhost:8080` | Control-plane base URL. |
-| `RUNNER_ID` | machine hostname | Runner identity matched with a server record. |
-| `CODEX_PATH` | `codex` | Codex CLI executable path. |
-| `RUNNER_TOKEN` | empty | Bearer token for connecting to an authenticated control plane. |
-| `CODEX_BYPASS_APPROVALS_AND_SANDBOX` | `true` | Whether the runner ensures Codex runs without sandbox or approval prompts. |
-| `HEARTBEAT_INTERVAL` | `10s` | Runner heartbeat interval. |
-| `RUNNER_ENV` | empty | Extra environment variables separated by `;`. |
-
-### Frontend
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `VITE_API_PROXY_TARGET` | `http://127.0.0.1:8080` | Dev-server proxy target for `/api`. |
-| `VITE_API_BASE_URL` | `/api/v1` | Browser API base URL. |
-| `VITE_CONTROL_URL` | browser origin | Default URL shown in runner install commands. |
-
-## Development Checks
-
-Run before committing or merging:
-
-```powershell
 go test ./...
 go vet ./...
-cd frontend
-npm run build
+(cd frontend && npm ci && npm run build)
+sh ./scripts/build-runner-artifacts.sh
 ```
-
-Build runner artifacts when runner behavior, install scripts, release packaging,
-or backend artifact-serving behavior changes:
-
-```powershell
-.\scripts\build-runner-artifacts.ps1
-```
-
-GitHub Actions runs:
-
-- `go test ./...`
-- `go vet ./...`
-- `npm run build`
-- runner artifact build
-
-## Releases
-
-Release preparation is documented in [docs/release-checklist.md](docs/release-checklist.md).
-
-Pushing a tag like `v0.1.0` triggers the GitHub release workflow:
-
-```powershell
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-The release workflow reruns the quality gate, builds runner artifacts, writes
-`SHA256SUMS.txt`, and publishes the files to GitHub Release.
-
-## Deployment Notes
-
-For most self-hosted installs, use the root `docker-compose.yml`:
-
-1. Starts bundled PostgreSQL by default.
-2. Runs `migrate up` before the backend starts.
-3. Builds and serves runner artifacts from the backend image.
-4. Serves the built frontend through Nginx.
-5. Proxies `/api`, SSE, and WebSocket upgrade traffic to the backend.
-
-Use `.env.example` as the deployment template. The default bind address is
-`127.0.0.1` for local safety; change `MERIDIAN_HTTP_BIND` only when a reverse
-proxy, firewall, and HTTPS plan are in place.
-For Docker Compose deployments that use an external database, set
-`MERIDIAN_DATABASE_URL`; do not set `DATABASE_URL` in the compose `.env`, so
-old shell or CI values cannot override the bundled database connection.
-If the external database is another Docker container on a different network,
-also set `MERIDIAN_DATABASE_DOCKER_NETWORK=<network>` and load
-`docker-compose.external-db.yml`:
-
-```bash
-docker compose --env-file .env -f docker-compose.yml -f docker-compose.external-db.yml up -d --build
-```
-
-Source-based deployment is still supported:
-
-1. Provision PostgreSQL.
-2. Apply migrations with `go run ./backend/cmd/migrate up`.
-3. Build runner artifacts with `scripts/build-runner-artifacts.ps1`.
-4. Start the backend with `DATABASE_URL`, `BACKEND_ADDR`, and
-   `RUNNER_ARTIFACT_DIR` set.
-5. Build the frontend with `npm run build`.
-6. Serve `frontend/dist` with a static web server or reverse proxy.
-7. Proxy `/api` and WebSocket upgrade traffic to the backend.
-
-Public or shared deployments should use HTTPS and make runner install commands
-use the public control-plane URL. If `WORKBENCH_AUTH_USERS` is empty, the first
-browser visit enters admin setup mode.
-
-Private Gitea deployments stamp backend and frontend images with the pushed
-commit and then verify both the internal Compose network and public URL. The
-backend exposes `GET /api/v1/build`; the frontend serves `/build.json`. Set
-`MERIDIAN_DEPLOY_VERIFY_URL` in the deployment `.env` when the public URL is not
-`https://meridian.example.com`.
 
 ## Current Limitations
 
@@ -492,13 +196,14 @@ backend exposes `GET /api/v1/build`; the frontend serves `/build.json`. Set
 - Runner install endpoints are intended for trusted environments.
 - Runner artifacts are not signed.
 - Codex CLI must be installed separately on runner machines.
-- The first version keeps context manual; it does not recommend or inject
-  context automatically.
+- Context is manually selected; v1 does not recommend or inject context
+  automatically.
 - A successful Codex run does not complete a task. The user must manually mark
   the task done.
 
 ## Related Documents
 
+- [Deployment Guide](docs/deployment.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
 - [Release Checklist](docs/release-checklist.md)

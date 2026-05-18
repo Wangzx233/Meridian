@@ -53,14 +53,14 @@ Run checks relevant to the touched files.
 
 Backend and runner:
 
-```powershell
+```bash
 go test ./...
 go vet ./...
 ```
 
 Frontend:
 
-```powershell
+```bash
 cd frontend
 npm run build
 ```
@@ -68,8 +68,8 @@ npm run build
 Runner artifacts, when runner behavior, install scripts, release packaging, or
 backend artifact-serving behavior changes:
 
-```powershell
-.\scripts\build-runner-artifacts.ps1
+```bash
+sh ./scripts/build-runner-artifacts.sh
 ```
 
 Docs-only changes usually need `git diff --check` plus a careful diff review.

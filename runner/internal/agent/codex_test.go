@@ -448,12 +448,22 @@ func TestSelfUpdateCommandIncludesRunnerIdentity(t *testing.T) {
 	joined := command + " " + strings.Join(args, " ")
 	for _, want := range []string{
 		"runner_id=runner_desktop",
-		"runner_token=runner-token",
 		"codex_path=%2Fusr%2Flocal%2Fbin%2Fcodex",
+		"RUNNER_UPDATE_TOKEN",
+		"Authorization",
+		"Bearer",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("self update command missing %q: %s", want, joined)
 		}
+	}
+	for _, leaked := range []string{"runner_token=", "runner-token"} {
+		if strings.Contains(joined, leaked) {
+			t.Fatalf("self update command leaked %q: %s", leaked, joined)
+		}
+	}
+	if os.PathSeparator != '\\' && !strings.Contains(joined, "/etc/codex-task-workbench-runner.env") {
+		t.Fatalf("self update command missing runner env file fallback: %s", joined)
 	}
 }
 

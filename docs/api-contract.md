@@ -461,6 +461,9 @@ Runner update rules:
   need one manual reinstall.
 - The update reuses the normal install endpoints and preserves `runner_id`.
   Windows uses `install.ps1`, while Linux and macOS use `install.sh`.
+- The runner token is used as a local updater secret and sent to install
+  endpoints with the `Authorization` header; clients and runners must not put
+  it in installer URLs.
 - `accepted` means the runner started its local updater process, not that the
   new runner has already reconnected.
 
@@ -1319,9 +1322,10 @@ the request.
 ```
 
 When accepted, the runner asynchronously reruns the platform install script
-using its current control URL, runner token, runner id, and Codex path. Windows
-runners use `install.ps1`; Linux and macOS runners use `install.sh`. The current
-websocket can disconnect while the binary is replaced and restarted.
+using its current control URL, runner id, Codex path, and runner token as a
+local updater secret for `Authorization` headers. Windows runners use
+`install.ps1`; Linux and macOS runners use `install.sh`. The current websocket
+can disconnect while the binary is replaced and restarted.
 
 ### `fs.list`
 

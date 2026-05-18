@@ -12,13 +12,15 @@ import (
 	"codex-task-workbench/runner/internal/agent"
 )
 
+var RunnerVersion = "0.5.0"
+
 func main() {
 	hostname, _ := os.Hostname()
 	cfg := agent.Config{
 		ControlURL:        env("CONTROL_URL", "http://localhost:8080"),
 		RunnerID:          env("RUNNER_ID", hostname),
 		Hostname:          hostname,
-		Version:           "0.5.0",
+		Version:           RunnerVersion,
 		CodexPath:         env("CODEX_PATH", "codex"),
 		RunnerToken:       os.Getenv("RUNNER_TOKEN"),
 		UseCodexSandbox:   !boolEnv("CODEX_BYPASS_APPROVALS_AND_SANDBOX", true),

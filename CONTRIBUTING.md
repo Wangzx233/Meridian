@@ -41,6 +41,9 @@ or backend artifact-serving behavior changes:
 sh ./scripts/build-runner-artifacts.sh
 ```
 
+Set `RUNNER_VERSION=<commit-or-tag>` for source-built runner artifacts when the
+reported runner version needs to identify the build.
+
 GitHub Actions runs the same core checks on pull requests and pushes to `main`.
 
 ## Pull Request Guidelines

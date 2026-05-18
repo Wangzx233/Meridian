@@ -5,6 +5,7 @@ script_dir="$(dirname "$0")"
 repo_root="$(CDPATH= cd "$script_dir/.." && pwd)"
 artifact_dir="${RUNNER_ARTIFACT_DIR:-$repo_root/artifacts/runner}"
 go_exe="${GO_EXE:-go}"
+runner_version="${RUNNER_VERSION:-dev}"
 
 mkdir -p "$artifact_dir"
 
@@ -17,7 +18,7 @@ build_runner() {
     cd "$repo_root"
     GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 "$go_exe" build \
       -trimpath \
-      -ldflags="-s -w" \
+      -ldflags="-s -w -X codex-task-workbench/runner/cmd/runner.RunnerVersion=$runner_version" \
       -o "$artifact_dir/$output" \
       ./runner/cmd/runner
   )

@@ -557,9 +557,6 @@ func (a *Agent) selfUpdateCommand() (string, []string, error) {
 	}
 	query := url.Values{}
 	query.Set("runner_id", runnerID)
-	if a.cfg.RunnerToken != "" {
-		query.Set("runner_token", a.cfg.RunnerToken)
-	}
 	if a.cfg.CodexPath != "" && a.cfg.CodexPath != "codex" {
 		query.Set("codex_path", a.cfg.CodexPath)
 	}
@@ -569,16 +566,16 @@ func (a *Agent) selfUpdateCommand() (string, []string, error) {
 		runAs := windowsRunnerRunAs()
 		query.Set("run_as", runAs)
 		installURL := controlURL + "/api/v1/runner/install.ps1?" + query.Encode()
-		script := "Start-Sleep -Seconds 2; iex ((iwr -UseBasicParsing -Uri '" + strings.ReplaceAll(installURL, "'", "''") + "').Content)"
+		script := "$headers=@{}; if ($env:RUNNER_UPDATE_TOKEN) { $headers['Authorization']='Bearer ' + $env:RUNNER_UPDATE_TOKEN }; Start-Sleep -Seconds 2; iex ((iwr -UseBasicParsing -Uri '" + strings.ReplaceAll(installURL, "'", "''") + "' -Headers $headers).Content)"
 		return windowsPowerShellExecutable(), []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}, nil
 	case "linux":
 		installURL := controlURL + "/api/v1/runner/install.sh?" + query.Encode()
-		installCommand := "sleep 2; curl -fsSL " + shellSingleQuote(installURL) + " | sh"
+		installCommand := runnerInstallShellCommand(installURL)
 		script := "if command -v systemd-run >/dev/null 2>&1 && systemd-run --unit codex-task-workbench-runner-update --collect /bin/sh -lc " + shellSingleQuote(installCommand) + "; then :; else (" + installCommand + ") >/tmp/codex-task-workbench-runner-update.log 2>&1 </dev/null & fi"
 		return "/bin/sh", []string{"-lc", script}, nil
 	case "darwin":
 		installURL := controlURL + "/api/v1/runner/install.sh?" + query.Encode()
-		script := "(sleep 2; curl -fsSL " + shellSingleQuote(installURL) + " | sh) >/tmp/codex-task-workbench-runner-update.log 2>&1 </dev/null &"
+		script := "(" + runnerInstallShellCommand(installURL) + ") >/tmp/codex-task-workbench-runner-update.log 2>&1 </dev/null &"
 		return "/bin/sh", []string{"-lc", script}, nil
 	default:
 		return "", nil, errors.New("unsupported operating system " + runtime.GOOS)
@@ -603,11 +600,19 @@ func shellSingleQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
+func runnerInstallShellCommand(installURL string) string {
+	quotedURL := shellSingleQuote(installURL)
+	return `sleep 2; if [ -z "${RUNNER_UPDATE_TOKEN:-}" ] && [ -r /etc/codex-task-workbench-runner.env ]; then RUNNER_UPDATE_TOKEN="$(sed -n 's/^RUNNER_TOKEN=//p' /etc/codex-task-workbench-runner.env | tail -n 1)"; fi; if [ -n "${RUNNER_UPDATE_TOKEN:-}" ]; then curl -fsSL -H "Authorization: Bearer ${RUNNER_UPDATE_TOKEN}" ` + quotedURL + ` | sh; else curl -fsSL ` + quotedURL + ` | sh; fi`
+}
+
 func (a *Agent) runSelfUpdate(ctx context.Context, command string, args []string) error {
 	updateCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(updateCtx, command, args...)
 	cmd.Env = mergedEnv(a.cfg.Env)
+	if a.cfg.RunnerToken != "" {
+		cmd.Env = mergedEnvList(cmd.Env).with("RUNNER_UPDATE_TOKEN=" + a.cfg.RunnerToken)
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}

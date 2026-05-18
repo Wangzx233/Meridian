@@ -115,6 +115,11 @@ Both scripts write:
 - `artifacts/runner/runner-darwin-amd64`
 - `artifacts/runner/runner-darwin-arm64`
 
+Set `RUNNER_VERSION=<commit-or-tag>` when building artifacts from source if the
+web UI should show a release-specific runner version after install or
+self-update. Compose image builds set the runner version from
+`MERIDIAN_BUILD_COMMIT` automatically.
+
 The web UI's top-right runner install menu uses these artifacts through the
 backend install endpoints. Prefer that UI flow over copying endpoint URLs from
 documentation.

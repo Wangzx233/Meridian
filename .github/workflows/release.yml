@@ -70,6 +70,8 @@ jobs:
           cache: true
 
       - name: Build runner artifacts
+        env:
+          RUNNER_VERSION: ${{ env.RELEASE_TAG }}
         run: sh ./scripts/build-runner-artifacts.sh
 
       - name: Upload runner artifacts

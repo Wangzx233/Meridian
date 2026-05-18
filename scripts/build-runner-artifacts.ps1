@@ -1,5 +1,6 @@
 param(
-  [string]$GoExe = $env:GO_EXE
+  [string]$GoExe = $env:GO_EXE,
+  [string]$RunnerVersion = $env:RUNNER_VERSION
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,6 +26,9 @@ if ([string]::IsNullOrWhiteSpace($GoExe)) {
 if ([string]::IsNullOrWhiteSpace($GoExe) -or -not (Test-Path -LiteralPath $GoExe)) {
   throw "Go executable not found. Add go to PATH or set GO_EXE to the full go.exe path."
 }
+if ([string]::IsNullOrWhiteSpace($RunnerVersion)) {
+  $RunnerVersion = "dev"
+}
 
 $targets = @(
   @{ GOOS = "windows"; GOARCH = "amd64"; Output = "runner-windows-amd64.exe" },
@@ -45,7 +49,7 @@ try {
     $env:CGO_ENABLED = "0"
     $out = Join-Path $artifactDir $target.Output
     Write-Host "Building $($target.GOOS)/$($target.GOARCH) -> $out"
-    & $GoExe build -trimpath -ldflags="-s -w" -o $out .\runner\cmd\runner
+    & $GoExe build -trimpath -ldflags="-s -w -X codex-task-workbench/runner/cmd/runner.RunnerVersion=$RunnerVersion" -o $out .\runner\cmd\runner
   }
 }
 finally {

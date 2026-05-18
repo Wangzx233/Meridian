@@ -33,12 +33,14 @@ type InterruptRunResult struct {
 }
 
 type CreateServerInput struct {
-	Name     string `json:"name"`
-	RunnerID string `json:"runner_id"`
+	Name     string  `json:"name"`
+	Alias    *string `json:"alias"`
+	RunnerID string  `json:"runner_id"`
 }
 
 type PatchServerInput struct {
 	Name     *string `json:"name"`
+	Alias    *string `json:"alias"`
 	RunnerID *string `json:"runner_id"`
 	Status   *string `json:"status"`
 }

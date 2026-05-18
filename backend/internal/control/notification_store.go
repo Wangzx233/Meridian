@@ -181,7 +181,7 @@ func (s *Store) DeleteEmailNotificationConfig(ctx context.Context, id string) er
 
 func (s *Store) ListWorkbenchNotifications(ctx context.Context, pendingOnly bool) ([]WorkbenchNotification, error) {
 	query := `
-		SELECT n.id, n.type, n.server_id, s.name, n.project_id, p.name, n.task_id, t.title,
+		SELECT n.id, n.type, n.server_id, COALESCE(NULLIF(s.alias, ''), s.name), n.project_id, p.name, n.task_id, t.title,
 		       n.run_id, n.run_status, n.title, n.message, n.acknowledged_at, n.created_at
 		FROM workbench_notifications n
 		JOIN servers s ON s.id=n.server_id
@@ -219,7 +219,7 @@ func (s *Store) CreateTaskDoneNotification(ctx context.Context, task Task) (Work
 		SELECT n.id, n.type, n.server_id, $7::text AS server_name, n.project_id, $8::text AS project_name,
 		       n.task_id, $9::text AS task_title, n.run_id, n.run_status, n.title, n.message, n.acknowledged_at, n.created_at
 		FROM inserted n`,
-		NotificationTypeTaskDone, server.ID, project.ID, task.ID, title, message, server.Name, project.Name, task.Title)
+		NotificationTypeTaskDone, server.ID, project.ID, task.ID, title, message, serverDisplayName(server), project.Name, task.Title)
 	return scanWorkbenchNotification(row)
 }
 
@@ -256,7 +256,7 @@ func (s *Store) CreateRunFinishedNotification(ctx context.Context, run Run) (Wor
 		SELECT n.id, n.type, n.server_id, $9::text AS server_name, n.project_id, $10::text AS project_name,
 		       n.task_id, $11::text AS task_title, n.run_id, n.run_status, n.title, n.message, n.acknowledged_at, n.created_at
 		FROM inserted n`,
-		NotificationTypeRunFinished, server.ID, project.ID, task.ID, run.ID, run.Status, title, message, server.Name, project.Name, task.Title)
+		NotificationTypeRunFinished, server.ID, project.ID, task.ID, run.ID, run.Status, title, message, serverDisplayName(server), project.Name, task.Title)
 	return scanWorkbenchNotification(row)
 }
 
@@ -268,7 +268,7 @@ func (s *Store) AcknowledgeWorkbenchNotification(ctx context.Context, id string)
 			WHERE id=$1
 			RETURNING id, type, server_id, project_id, task_id, run_id, run_status, title, message, acknowledged_at, created_at
 		)
-		SELECT n.id, n.type, n.server_id, s.name, n.project_id, p.name, n.task_id, t.title,
+		SELECT n.id, n.type, n.server_id, COALESCE(NULLIF(s.alias, ''), s.name), n.project_id, p.name, n.task_id, t.title,
 		       n.run_id, n.run_status, n.title, n.message, n.acknowledged_at, n.created_at
 		FROM updated n
 		JOIN servers s ON s.id=n.server_id

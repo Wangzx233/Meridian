@@ -1,4 +1,5 @@
 import { runnerFeatureCapabilities } from "./constants";
+import { serverDisplayName } from "./serverDisplay";
 import type { Server } from "../types";
 
 export function runnerCapabilitySummary(server: Server) {
@@ -26,7 +27,7 @@ export function runnerCapabilityBlockedReason(server: Server | null, capability:
     return `Select the server for this project before using ${feature}.`;
   }
   if (!server.runner_connected) {
-    return `No runner websocket is connected for ${server.name}. Start or reinstall the runner with runner id ${server.runner_id}.`;
+    return `No runner websocket is connected for ${serverDisplayName(server)}. Start or reinstall the runner with runner id ${server.runner_id}.`;
   }
   const version = server.runner_connection?.version ? `version ${server.runner_connection.version}` : "an unknown version";
   const hostname = server.runner_connection?.hostname ? ` on ${server.runner_connection.hostname}` : "";

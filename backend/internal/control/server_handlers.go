@@ -1,6 +1,7 @@
 package control
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -44,8 +45,12 @@ func (a *API) handleServerByID(w http.ResponseWriter, r *http.Request) {
 		a.hydrateServer(&item)
 		a.respond(w, http.StatusOK, item, err)
 	case http.MethodPatch:
-		var in PatchServerInput
-		if !decodeJSON(w, r, &in) {
+		var raw map[string]json.RawMessage
+		if !decodeJSON(w, r, &raw) {
+			return
+		}
+		in, ok := decodePatchServerInput(w, raw)
+		if !ok {
 			return
 		}
 		item, err := a.store.PatchServer(r.Context(), id, in)
@@ -61,6 +66,58 @@ func (a *API) handleServerByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		methodNotAllowed(w)
 	}
+}
+
+func decodePatchServerInput(w http.ResponseWriter, raw map[string]json.RawMessage) (PatchServerInput, bool) {
+	var in PatchServerInput
+	for key, value := range raw {
+		switch key {
+		case "name":
+			s, ok := decodePatchString(w, value, "name", false)
+			if !ok {
+				return PatchServerInput{}, false
+			}
+			in.Name = s
+		case "alias":
+			s, ok := decodePatchString(w, value, "alias", true)
+			if !ok {
+				return PatchServerInput{}, false
+			}
+			in.Alias = s
+		case "runner_id":
+			s, ok := decodePatchString(w, value, "runner_id", false)
+			if !ok {
+				return PatchServerInput{}, false
+			}
+			in.RunnerID = s
+		case "status":
+			s, ok := decodePatchString(w, value, "status", false)
+			if !ok {
+				return PatchServerInput{}, false
+			}
+			in.Status = s
+		default:
+			writeError(w, http.StatusBadRequest, "validation_error", "Invalid JSON request body.", nil)
+			return PatchServerInput{}, false
+		}
+	}
+	return in, true
+}
+
+func decodePatchString(w http.ResponseWriter, raw json.RawMessage, field string, nullClears bool) (*string, bool) {
+	if string(raw) == "null" {
+		if !nullClears {
+			return nil, true
+		}
+		empty := ""
+		return &empty, true
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_error", "Invalid "+field+".", nil)
+		return nil, false
+	}
+	return &value, true
 }
 
 func (a *API) handleServerDirectories(w http.ResponseWriter, r *http.Request, serverID string) {

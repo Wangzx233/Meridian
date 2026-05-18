@@ -448,7 +448,7 @@ func (a *API) handleRunnerUpdateAll(w http.ResponseWriter, r *http.Request) {
 	for _, server := range servers {
 		result := RunnerUpdateServerResult{
 			ServerID:   server.ID,
-			ServerName: server.Name,
+			ServerName: serverDisplayName(server),
 			RunnerID:   server.RunnerID,
 		}
 		if info := a.runners.Info(server.RunnerID); info != nil {

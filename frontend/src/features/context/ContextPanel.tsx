@@ -42,6 +42,7 @@ import { contextTypeLabel } from "../../utils";
 import { contextTypes } from "../../shared/constants";
 import { useI18n } from "../../shared/i18n";
 import type { LoadState } from "../../shared/loadState";
+import { serverDisplayName } from "../../shared/serverDisplay";
 import { LoadBoundary } from "../../shared/ui";
 
 export function ContextPanel(props: {
@@ -380,7 +381,7 @@ function contextScopeLabel(item: ContextItem, server: Server | null, project: Pr
     return "global";
   }
   if (item.scope === "server") {
-    return `server: ${server?.name ?? item.server_id ?? "unknown"}`;
+    return `server: ${serverDisplayName(server) || item.server_id || "unknown"}`;
   }
   if (item.scope === "project") {
     return `project: ${project.name}`;

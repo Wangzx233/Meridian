@@ -138,12 +138,17 @@ codex --cd <project_workdir> exec resume --dangerously-bypass-approvals-and-sand
 ```text
 id
 name
+alias
 runner_id
 status
 last_heartbeat_at
 created_at
 updated_at
 ```
+
+`name` is the registered or runner-reported host name. `alias` is an optional
+human display name used by the console, runner update summaries, and workbench
+notifications; runner heartbeats do not overwrite it.
 
 ### projects
 

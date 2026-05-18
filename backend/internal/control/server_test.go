@@ -69,6 +69,22 @@ func TestBuildInfoIsPublicWhenAuthConfigured(t *testing.T) {
 	}
 }
 
+func TestDecodePatchServerInputCanClearAlias(t *testing.T) {
+	rec := httptest.NewRecorder()
+	in, ok := decodePatchServerInput(rec, map[string]json.RawMessage{
+		"alias": json.RawMessage("null"),
+	})
+	if !ok {
+		t.Fatalf("decode patch server input failed with status %d: %s", rec.Code, rec.Body.String())
+	}
+	if in.Alias == nil {
+		t.Fatalf("alias pointer is nil, want empty string pointer for clear")
+	}
+	if *in.Alias != "" {
+		t.Fatalf("alias = %q, want empty string", *in.Alias)
+	}
+}
+
 func TestMarkDoneDoesNotCreatePendingNotice(t *testing.T) {
 	dsn := testDatabaseURL(t)
 	ctx := context.Background()

@@ -370,7 +370,32 @@ Create server request:
 ```json
 {
   "name": "desktop",
+  "alias": "Oracle backup",
   "runner_id": "runner_desktop"
+}
+```
+
+Server response:
+
+```json
+{
+  "id": "srv_123",
+  "name": "desktop",
+  "alias": "Oracle backup",
+  "runner_id": "runner_desktop",
+  "status": "online",
+  "runner_connected": true,
+  "last_heartbeat_at": "2026-05-11T08:00:00Z",
+  "created_at": "2026-05-11T07:00:00Z",
+  "updated_at": "2026-05-11T08:00:00Z"
+}
+```
+
+Patch server request:
+
+```json
+{
+  "alias": "Oracle backup"
 }
 ```
 
@@ -393,6 +418,11 @@ Directory listing response:
 
 Rules:
 
+- `name` is the runner-reported or registered host name. `alias` is an optional
+  human display name; clients should display `alias` when present and fall back
+  to `name`.
+- Send `alias` as `null` or an empty string to clear it. Runner heartbeats never
+  overwrite `alias`.
 - The endpoint requires a currently connected runner for the server's
   `runner_id`.
 - The runner must report the `fs_list` capability. Older runners can still show
@@ -414,7 +444,7 @@ Runner update response:
   "results": [
     {
       "server_id": "srv_123",
-      "server_name": "desktop",
+      "server_name": "Oracle backup",
       "runner_id": "runner_desktop",
       "previous_version": "0.4.0",
       "status": "accepted",
@@ -668,7 +698,7 @@ Notification response:
   "id": "ntf_123",
   "type": "run_finished",
   "server_id": "srv_123",
-  "server_name": "desktop",
+  "server_name": "Oracle backup",
   "project_id": "prj_123",
   "project_name": "codex-task-workbench",
   "task_id": "tsk_123",
@@ -687,6 +717,8 @@ Rules:
 - `pending=true` is the default and returns unacknowledged notifications.
 - Notification type values are `task_done` and `run_finished`. `run_finished`
   notifications include `run_id` and terminal `run_status`.
+- `server_name` is the server alias when present, otherwise the registered
+  server name.
 - Pending notification queries exclude `task_done`; that type is retained only
   for historical records.
 - Opening or dismissing a notification should call the acknowledge endpoint.

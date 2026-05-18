@@ -2,11 +2,17 @@ package control
 
 import (
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func scanServer(row pgx.Row) (Server, error) {
 	var s Server
-	err := row.Scan(&s.ID, &s.Name, &s.RunnerID, &s.Status, &s.LastHeartbeatAt, &s.CreatedAt, &s.UpdatedAt)
+	var alias pgtype.Text
+	err := row.Scan(&s.ID, &s.Name, &alias, &s.RunnerID, &s.Status, &s.LastHeartbeatAt, &s.CreatedAt, &s.UpdatedAt)
+	if alias.Valid {
+		value := alias.String
+		s.Alias = &value
+	}
 	return s, dbErr(err)
 }
 

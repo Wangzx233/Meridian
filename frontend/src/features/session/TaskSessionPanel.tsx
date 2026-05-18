@@ -59,6 +59,7 @@ import type { LoadState } from "../../shared/loadState";
 import type { Notice } from "../../shared/notices";
 import { composerDefaultHeight, composerMaxHeight, composerMinHeight, sidePanelDefaultWidth, sidePanelMaxWidth, sidePanelMinWidth, type SidePanelTab, type WorkbenchTab } from "../../shared/constants";
 import { useI18n } from "../../shared/i18n";
+import { serverDisplayName } from "../../shared/serverDisplay";
 import { useStoredPanelSize, useStoredString } from "../../shared/storage";
 import { EmptyState, Fact, LoadingState, ResizeHandle, StatusBadge } from "../../shared/ui";
 import { AgentsFilePanel } from "../agents/AgentsFilePanel";
@@ -570,7 +571,7 @@ export function TaskSessionPanel(props: {
       <div className="sessionHeader">
         <div className="sessionTitleBlock">
           <div className="breadcrumb">
-            <span>{props.server?.name ?? t("session.unknownServer")}</span>
+            <span>{serverDisplayName(props.server) || t("session.unknownServer")}</span>
             <span>/</span>
             <span>{props.project.name}</span>
           </div>

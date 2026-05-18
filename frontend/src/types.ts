@@ -37,6 +37,7 @@ export type AuthSession = {
 export type Server = {
   id: string;
   name: string;
+  alias: string | null;
   runner_id: string;
   status: ServerStatus;
   runner_connected: boolean;
@@ -289,6 +290,7 @@ export type RunEvent = {
 
 export type CreateServerRequest = {
   name: string;
+  alias?: string;
   runner_id: string;
 };
 

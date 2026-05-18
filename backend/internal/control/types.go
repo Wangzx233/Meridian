@@ -38,6 +38,7 @@ const (
 type Server struct {
 	ID                 string         `json:"id"`
 	Name               string         `json:"name"`
+	Alias              *string        `json:"alias"`
 	RunnerID           string         `json:"runner_id"`
 	Status             string         `json:"status"`
 	RunnerConnected    bool           `json:"runner_connected"`

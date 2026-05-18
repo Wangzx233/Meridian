@@ -149,6 +149,65 @@ func TestStoreRunStateTransitionsIntegration(t *testing.T) {
 	}
 }
 
+func TestStoreServerAliasIntegration(t *testing.T) {
+	dsn := testDatabaseURL(t)
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect database: %v", err)
+	}
+	defer pool.Close()
+	resetIntegrationDB(t, pool)
+
+	store := NewStore(pool)
+	alias := "Oracle 424"
+	server, err := store.CreateServer(ctx, CreateServerInput{Name: "oracle424-host", Alias: &alias, RunnerID: "runner_oracle424"})
+	if err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+	if server.Alias == nil || *server.Alias != alias {
+		t.Fatalf("server alias = %v, want %q", server.Alias, alias)
+	}
+	if serverDisplayName(server) != alias {
+		t.Fatalf("display name = %q, want alias %q", serverDisplayName(server), alias)
+	}
+
+	updatedAlias := "Backup node"
+	updated, err := store.PatchServer(ctx, server.ID, PatchServerInput{Alias: &updatedAlias})
+	if err != nil {
+		t.Fatalf("patch server alias: %v", err)
+	}
+	if updated.Alias == nil || *updated.Alias != updatedAlias {
+		t.Fatalf("updated alias = %v, want %q", updated.Alias, updatedAlias)
+	}
+
+	if err := store.UpsertRunnerHeartbeat(ctx, server.RunnerID, "heartbeat-hostname"); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	afterHeartbeat, err := store.GetServer(ctx, server.ID)
+	if err != nil {
+		t.Fatalf("get after heartbeat: %v", err)
+	}
+	if afterHeartbeat.Alias == nil || *afterHeartbeat.Alias != updatedAlias {
+		t.Fatalf("alias after heartbeat = %v, want %q", afterHeartbeat.Alias, updatedAlias)
+	}
+	if afterHeartbeat.Name != server.Name {
+		t.Fatalf("name after heartbeat = %q, want %q", afterHeartbeat.Name, server.Name)
+	}
+
+	clear := " "
+	cleared, err := store.PatchServer(ctx, server.ID, PatchServerInput{Alias: &clear})
+	if err != nil {
+		t.Fatalf("clear alias: %v", err)
+	}
+	if cleared.Alias != nil {
+		t.Fatalf("cleared alias = %v, want nil", *cleared.Alias)
+	}
+	if serverDisplayName(cleared) != server.Name {
+		t.Fatalf("display name after clear = %q, want %q", serverDisplayName(cleared), server.Name)
+	}
+}
+
 func TestCreateRunRecoversSessionFromHistoricalRunIntegration(t *testing.T) {
 	dsn := os.Getenv("CTW_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -337,7 +396,7 @@ func TestTaskDoneNotificationsAreHiddenFromPendingIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create notification: %v", err)
 	}
-	if notification.Type != "task_done" || notification.TaskID != task.ID || notification.ProjectName != project.Name || notification.ServerName != server.Name {
+	if notification.Type != "task_done" || notification.TaskID != task.ID || notification.ProjectName != project.Name || notification.ServerName != serverDisplayName(server) {
 		t.Fatalf("notification = %#v, want task/project/server details", notification)
 	}
 	items, err := store.ListWorkbenchNotifications(ctx, true)

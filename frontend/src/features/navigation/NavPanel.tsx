@@ -39,8 +39,9 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api";
-import type { DirectoryEntry, Project, Server } from "../../types";
+import type { CreateServerRequest, DirectoryEntry, Project, Server } from "../../types";
 import { runnerCapabilitySummary } from "../../shared/runnerCapabilities";
+import { serverDisplayName } from "../../shared/serverDisplay";
 import { useI18n } from "../../shared/i18n";
 import type { LoadState } from "../../shared/loadState";
 import { EmptyState, ErrorState, Fact, InlineNotice, LoadBoundary, LoadingState, PanelHeader, StatusBadge } from "../../shared/ui";
@@ -56,8 +57,10 @@ export function NavPanel(props: {
   onToggleCollapsed: () => void;
   onSelectServer: (serverId: string) => void;
   onSelectProject: (projectId: string) => void;
-  onCreateServer: (input: { name: string; runner_id: string }) => void;
+  onCreateServer: (input: CreateServerRequest) => void;
   creatingServer: boolean;
+  onUpdateServerAlias: (serverId: string, alias: string) => void;
+  updatingServerAlias: boolean;
   onDeleteServer: (serverId: string) => void;
   deletingServer: boolean;
   onUpdateAllRunners: () => void;
@@ -74,6 +77,7 @@ export function NavPanel(props: {
   const { t } = useI18n();
   const [isCreatingServer, setIsCreatingServer] = useState(false);
   const [serverName, setServerName] = useState("");
+  const [serverAlias, setServerAlias] = useState("");
   const [runnerId, setRunnerId] = useState("");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [expandedServerId, setExpandedServerId] = useState<string | null>(null);
@@ -87,12 +91,16 @@ export function NavPanel(props: {
     }
     props.onCreateServer({
       name: serverName.trim(),
+      alias: serverAlias.trim(),
       runner_id: runnerId.trim(),
     });
     setServerName("");
+    setServerAlias("");
     setRunnerId("");
     setIsCreatingServer(false);
   };
+
+  const selectedServerName = serverDisplayName(selectedServer);
 
   return (
     <aside className={`navPanel ${props.collapsed ? "isCollapsed" : ""}`} aria-label={t("nav.aria")}>
@@ -116,8 +124,8 @@ export function NavPanel(props: {
             className={`collapsedNavButton ${selectedServer ? "hasSelection" : ""}`}
             type="button"
             onClick={props.onToggleCollapsed}
-            aria-label={selectedServer ? t("nav.selectedServer", { name: selectedServer.name }) : t("nav.expand")}
-            title={selectedServer ? t("nav.selectedServer", { name: selectedServer.name }) : t("nav.serversCollapsed")}
+            aria-label={selectedServer ? t("nav.selectedServer", { name: selectedServerName }) : t("nav.expand")}
+            title={selectedServer ? t("nav.selectedServer", { name: selectedServerName }) : t("nav.serversCollapsed")}
           >
             <ServerIcon size={18} />
           </button>
@@ -187,6 +195,14 @@ export function NavPanel(props: {
               disabled={props.creatingServer}
               required
             />
+            <label htmlFor="server-alias">{t("nav.serverAlias")}</label>
+            <input
+              id="server-alias"
+              value={serverAlias}
+              onChange={(event) => setServerAlias(event.target.value)}
+              placeholder={t("nav.serverAliasPlaceholder")}
+              disabled={props.creatingServer}
+            />
             <label htmlFor="server-runner-id">{t("nav.runnerId")}</label>
             <input
               id="server-runner-id"
@@ -213,7 +229,9 @@ export function NavPanel(props: {
           emptyBody={t("nav.noServersBody")}
         >
           <div className="listStack">
-            {props.servers.map((server) => (
+            {props.servers.map((server) => {
+              const displayName = serverDisplayName(server);
+              return (
               <div
                 key={server.id}
                 className={`serverNavItem ${props.selectedServerId === server.id ? "isSelected" : ""}`}
@@ -224,7 +242,7 @@ export function NavPanel(props: {
                     type="button"
                     onClick={() => props.onSelectServer(server.id)}
                   >
-                    <span className="itemTitle">{server.name}</span>
+                    <span className="itemTitle">{displayName}</span>
                     <StatusBadge status={server.status} />
                   </button>
                   <button
@@ -233,13 +251,13 @@ export function NavPanel(props: {
                     onClick={() => setExpandedServerId((current) => (current === server.id ? null : server.id))}
                     aria-label={
                       expandedServerId === server.id
-                        ? t("nav.collapseServer", { name: server.name })
-                        : t("nav.manageServer", { name: server.name })
+                        ? t("nav.collapseServer", { name: displayName })
+                        : t("nav.manageServer", { name: displayName })
                     }
                     title={
                       expandedServerId === server.id
-                        ? t("nav.collapseServer", { name: server.name })
-                        : t("nav.manageServer", { name: server.name })
+                        ? t("nav.collapseServer", { name: displayName })
+                        : t("nav.manageServer", { name: displayName })
                     }
                     aria-expanded={expandedServerId === server.id}
                   >
@@ -248,7 +266,13 @@ export function NavPanel(props: {
                 </div>
                 {expandedServerId === server.id ? (
                   <div className="serverManagePanel">
+                    <ServerAliasForm
+                      server={server}
+                      disabled={props.updatingServerAlias}
+                      onUpdate={props.onUpdateServerAlias}
+                    />
                     <div className="serverManageFacts">
+                      <Fact label={t("nav.registeredName")} value={server.name} />
                       <Fact label={t("nav.runner")} value={server.runner_id} mono />
                       <Fact label={t("nav.connection")} value={server.runner_connected ? t("nav.connected") : t("nav.heartbeat")} />
                       <Fact label={t("nav.capabilities")} value={runnerCapabilitySummary(server)} />
@@ -266,7 +290,7 @@ export function NavPanel(props: {
                       type="button"
                       disabled={props.deletingServer}
                       onClick={() => {
-                        if (window.confirm(t("nav.deleteServerConfirm", { name: server.name }))) {
+                        if (window.confirm(t("nav.deleteServerConfirm", { name: displayName }))) {
                           props.onDeleteServer(server.id);
                         }
                       }}
@@ -277,14 +301,15 @@ export function NavPanel(props: {
                   </div>
                 ) : null}
               </div>
-            ))}
+              );
+            })}
           </div>
         </LoadBoundary>
 
         <section className="childNavSection" aria-label={t("nav.projects")}>
           <PanelHeader
             icon={<FolderKanban size={16} />}
-            title={selectedServer ? t("nav.projectsOn", { name: selectedServer.name }) : t("nav.projects")}
+            title={selectedServer ? t("nav.projectsOn", { name: selectedServerName }) : t("nav.projects")}
             detail={selectedServer ? t("nav.configured", { count: props.projects.length }) : t("nav.selectServer")}
             action={
               <button
@@ -341,6 +366,55 @@ export function NavPanel(props: {
   );
 }
 
+function ServerAliasForm(props: {
+  server: Server;
+  disabled: boolean;
+  onUpdate: (serverId: string, alias: string) => void;
+}) {
+  const { t } = useI18n();
+  const [aliasDraft, setAliasDraft] = useState(props.server.alias ?? "");
+
+  useEffect(() => {
+    setAliasDraft(props.server.alias ?? "");
+  }, [props.server.alias, props.server.id]);
+
+  const trimmedAlias = aliasDraft.trim();
+  const currentAlias = props.server.alias ?? "";
+  const changed = trimmedAlias !== currentAlias;
+
+  const submitAlias = (event: FormEvent) => {
+    event.preventDefault();
+    if (!changed) {
+      return;
+    }
+    props.onUpdate(props.server.id, trimmedAlias);
+  };
+
+  return (
+    <form className="serverAliasForm" onSubmit={submitAlias}>
+      <label htmlFor={`server-alias-${props.server.id}`}>{t("nav.serverAlias")}</label>
+      <div className="serverAliasRow">
+        <input
+          id={`server-alias-${props.server.id}`}
+          value={aliasDraft}
+          onChange={(event) => setAliasDraft(event.target.value)}
+          placeholder={props.server.name}
+          disabled={props.disabled}
+        />
+        <button
+          className="iconButton compact"
+          type="submit"
+          disabled={props.disabled || !changed}
+          aria-label={t("nav.saveAlias")}
+          title={t("nav.saveAlias")}
+        >
+          {props.disabled ? <Loader2 className="spin" size={14} /> : <Save size={14} />}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 
 function ProjectCreateDialog(props: {
   server: Server;
@@ -355,6 +429,7 @@ function ProjectCreateDialog(props: {
   onClose: () => void;
 }) {
   const { t } = useI18n();
+  const displayName = serverDisplayName(props.server);
   const [projectName, setProjectName] = useState("");
   const [workdir, setWorkdir] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("main");
@@ -419,7 +494,7 @@ function ProjectCreateDialog(props: {
             </span>
             <div>
               <h2 id="project-dialog-title">{t("nav.addProject")}</h2>
-              <p>{t("nav.serverPrefix", { name: props.server.name })}</p>
+              <p>{t("nav.serverPrefix", { name: displayName })}</p>
             </div>
           </div>
           <button className="iconButton" type="button" onClick={props.onClose} aria-label={t("nav.closeProjectDialog")} title={t("nav.closeProjectDialog")}>

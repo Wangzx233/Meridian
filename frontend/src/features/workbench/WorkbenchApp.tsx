@@ -39,7 +39,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
-import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunMode, EmailNotificationConfigRequest, MarkDoneRequest, Run, WorkbenchNotification } from "../../types";
+import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunMode, CreateServerRequest, EmailNotificationConfigRequest, MarkDoneRequest, Run, WorkbenchNotification } from "../../types";
 import { isActiveRunStatus } from "../../utils";
 import {
   activeTaskStatuses,
@@ -274,7 +274,7 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
   const emailNotificationConfigs = emailNotificationsQuery.data?.items ?? [];
 
   const createServerMutation = useMutation({
-    mutationFn: (body: { name: string; runner_id: string }) => api.createServer(body),
+    mutationFn: (body: CreateServerRequest) => api.createServer(body),
     onSuccess: (server) => {
       setSelectedServerId(server.id);
       setSelectedProjectId(null);
@@ -285,6 +285,16 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
     onError: (error) => setNotice(errorNotice(error, t("app.serverCreateFailed"))),
+  });
+
+  const updateServerAliasMutation = useMutation({
+    mutationFn: (input: { serverId: string; alias: string }) =>
+      api.patchServer(input.serverId, { alias: input.alias }),
+    onSuccess: () => {
+      setNotice({ tone: "success", message: t("app.serverUpdated") });
+      void queryClient.invalidateQueries({ queryKey: ["servers"] });
+    },
+    onError: (error) => setNotice(errorNotice(error, t("app.serverUpdateFailed"))),
   });
 
   const deleteServerMutation = useMutation({
@@ -709,6 +719,8 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
           }}
           onCreateServer={(input) => createServerMutation.mutate(input)}
           creatingServer={createServerMutation.isPending}
+          onUpdateServerAlias={(serverId, alias) => updateServerAliasMutation.mutate({ serverId, alias })}
+          updatingServerAlias={updateServerAliasMutation.isPending}
           onDeleteServer={(serverId) => deleteServerMutation.mutate(serverId)}
           deletingServer={deleteServerMutation.isPending}
           onUpdateAllRunners={() => updateAllRunnersMutation.mutate()}

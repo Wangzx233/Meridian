@@ -676,6 +676,24 @@ summary {
   width: 100%;
 }
 
+.serverAliasForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.serverAliasRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  gap: 6px;
+  align-items: center;
+}
+
+.serverAliasRow .iconButton {
+  width: 30px;
+  min-height: 30px;
+}
+
 .projectNavItem {
   margin-left: 10px;
   width: calc(100% - 10px);

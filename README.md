@@ -12,15 +12,33 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%2B-4169E1?logo=postgresql&logoColor=white)
 ![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?logo=githubactions&logoColor=white)
 
-Meridian 是一个通过 Web 管理项目级 Codex CLI 工作的控制台。它不是新的
-agent runtime，不是 IDE，也不替代 Codex。真正执行任务的仍然是目标设备上的
-本地 Codex CLI，Meridian 只负责把多设备、多项目、多任务、运行历史和上下文选择
-集中管理起来。
+Meridian 是一个通过 Web 管理任务的控制台。它把多台设备、多个项目、多个任务放到一个界面里，让你随时打开浏览器，一键切换设备、项目和任务。自动提炼任务摘要，需要时可手动选择传入其他设备、项目、任务上下文。
+
+Meridian 不替代 Codex，也不重新实现 agent。真正执行任务的仍然是目标设备上的 Codex CLI。
+
+Meridian 所做的是在每台设备上运行一个设备代理，来管理设备上的 Codex。
+
+## 适用场景
+
+- 在不止一台设备上使用 Codex CLI，需要统一入口。
+- 维护多个项目，需要快速切换到对应设备上的项目和任务。
+- 希望手动选择其他任务和过往上下文，后续任务不用从头开始。
+- 同时把多个工作交给 Codex，并在任务完成或失败时回到控制台查看结果。
+- 需要在网页里查看运行状态、输出、历史记录和失败原因。
+
+## 和常见方案的区别
+
+| 方案 | 主要体验 | Meridian 的差异 |
+| --- | --- | --- |
+| Hermes / OpenClaw | 通用 agent、个人自动化、跨工具编排。 | 不做新的 agent runtime，只围绕项目任务管理 Codex CLI。 |
+| IDE + AI | 在编辑器里写代码，也可以通过远程开发连接服务器。 | 用 Web 在不同设备、项目、任务之间切换，不需要为每个任务反复打开窗口、连接服务器、启动 Codex。 |
+| Codex App / CLI | 直接和 Codex 交互，APP 也可以连接服务器运行。 | 服务器无需拥有公网 IP 也可被控制，工作台保存在 Meridian，不依赖相同的 APP 登录环境。 |
+
+Meridian 的重点不是“更聪明”，而是“更好管理”：Web 可访问、设备可切换、项目可切换、任务可继续。
 
 ## 快速开始
 
-开源用户优先使用 Docker Compose。它会启动 PostgreSQL、启动后端、在后端启动时
-自动应用数据库迁移、构建设备代理 artifacts，并服务 Web UI。
+Docker Compose 是推荐的部署方式。它会启动 PostgreSQL、启动后端、自动应用数据库迁移、构建设备代理文件，并服务 Web UI。
 
 ```bash
 git clone https://github.com/Wangzx233/Meridian.git
@@ -28,17 +46,15 @@ cd Meridian
 docker compose up -d --build
 ```
 
-打开：
+浏览器打开：
 
 ```text
 http://<server-ip>:18080
 ```
 
-如果只在本机试用，也可以打开 `http://127.0.0.1:18080`。Compose 默认监听
-`0.0.0.0`，自托管服务器不需要再手动设置公开监听地址。第一次浏览器访问会进入
-初始化管理员账号流程。
+如果只在本机试用，也可以打开 `http://127.0.0.1:18080`。Compose 默认监听所有地址，部署到服务器后通常可以直接通过服务器 IP 访问。第一次浏览器访问会进入初始化管理员账号流程。
 
-如需修改端口、数据库密码、外部数据库或认证配置：
+需要修改端口、数据库密码、外部数据库或认证配置时：
 
 ```bash
 cp .env.example .env
@@ -46,78 +62,36 @@ vi .env
 docker compose up -d --build
 ```
 
-公开或共享部署建议放到 HTTPS 后面。如果 Meridian 只通过本机反向代理暴露，可以在
-`.env` 中设置 `MERIDIAN_HTTP_BIND=127.0.0.1`。
+面向公网或多人使用时，建议放到 HTTPS 反向代理后面。如果 Meridian 只需要被本机反向代理访问，可以在 `.env` 中设置 `MERIDIAN_HTTP_BIND=127.0.0.1`。
 
-## 连接设备代理
+## 连接第一台设备
 
-每台执行任务的设备都需要先安装 Codex CLI。然后直接使用 Meridian 页面里的安装脚本：
+每台执行任务的设备都需要先安装 Codex CLI。随后直接使用 Meridian 页面里的安装脚本：
 
 1. 打开 Web UI，创建或选择一台设备。
 2. 点击右上角的设备代理安装按钮。
 3. 将 Control URL 设置为目标设备能访问到的 Meridian 地址。
 4. 复制 UI 里给出的 Linux、macOS 或 Windows 命令，并在目标设备上运行。
-5. 创建设备下的项目，把 `workdir` 设置为真实项目目录。
+5. 在该设备下创建项目，把 `workdir` 设置为真实项目目录。
 
-远程设备不要使用 `127.0.0.1`，除非 Meridian 也运行在同一台设备上。后端镜像和源码
-部署流程都会构建安装端点所需的设备代理 artifacts，通常不需要手写下载命令。
+远程设备不要使用 `127.0.0.1`，除非 Meridian 也运行在同一台设备上。Docker Compose 和源码部署都会提供安装端点所需的设备代理文件，通常不需要手写下载命令。
 
-## 手动源码部署
+## 常用流程
 
-不使用 Docker Compose 部署应用栈时，可以用源码方式部署。后端默认在启动时自动迁移
-数据库，所以首次部署不需要单独执行数据库迁移命令。
+1. 打开 Web UI。
+2. 创建设备，并用右上角安装菜单安装设备代理。
+3. 在设备下创建项目，并设置真实 `workdir`。
+4. 创建任务。
+5. 每次发送一条用户指令。
+6. 在 Output、Terminal 和 Files 中查看项目与运行状态。
+7. 持续追加 turn，直到工作完成。
+8. 手动将任务标记为 done。
 
-```bash
-sh ./scripts/build-runner-artifacts.sh
+## 其他部署方式
 
-cd frontend
-npm ci
-npm run build
-cd ..
+不使用 Docker Compose 时，可以采用源码部署。后端默认在启动时自动应用数据库迁移，首次部署不需要额外执行迁移命令；设备代理仍然通过页面右上角提供的安装脚本连接。
 
-DATABASE_URL='postgres://user:password@db-host:5432/meridian?sslmode=disable' \
-BACKEND_ADDR='0.0.0.0:8080' \
-RUNNER_ARTIFACT_DIR="$PWD/artifacts/runner" \
-go run ./backend/cmd/server
-```
-
-用你的 Web 服务器服务 `frontend/dist`，并把 `/api` 和 WebSocket 流量代理到后端。
-UI 可访问后，仍然通过右上角安装菜单连接目标设备代理。
-
-更多部署选项、外部数据库配置和 Windows 备注见
-[部署指南](docs/deployment.md)。
-
-## 开发
-
-开发 Meridian 本身时使用源码流程：
-
-```bash
-docker run --name meridian-postgres \
-  -e POSTGRES_DB=meridian_dev \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 55433:5432 \
-  -d postgres:16-alpine
-
-sh ./scripts/build-runner-artifacts.sh
-
-DATABASE_URL='postgres://postgres:postgres@127.0.0.1:55433/meridian_dev?sslmode=disable' \
-BACKEND_ADDR='127.0.0.1:18080' \
-RUNNER_ARTIFACT_DIR="$PWD/artifacts/runner" \
-go run ./backend/cmd/server
-```
-
-另开一个 shell：
-
-```bash
-cd frontend
-npm ci
-VITE_API_PROXY_TARGET='http://127.0.0.1:18080' \
-VITE_CONTROL_URL='http://127.0.0.1:18080' \
-npm run dev
-```
-
-打开 `http://127.0.0.1:5173`。
+源码部署、外部数据库、环境变量、反向代理和 Windows 备注见 [部署指南](docs/deployment.md)。
 
 ## 核心能力
 
@@ -145,37 +119,6 @@ Go backend control plane
   -> local Codex CLI in the project workdir
 ```
 
-## 基本使用流程
-
-1. 打开 Web UI。
-2. 创建设备，并用右上角安装菜单安装设备代理。
-3. 在设备下创建项目，并设置真实 `workdir`。
-4. 创建任务。
-5. 每次发送一条用户指令。
-6. 在 Output、Terminal 和 Files 中查看项目与运行状态。
-7. 持续追加 turn，直到确认工作完成。
-8. 手动将任务标记为 done。
-
-## 仓库结构
-
-```text
-backend/   Go 控制平面 API
-runner/    Go 设备代理，连接控制平面并调用 Codex CLI
-frontend/  React + TypeScript + Vite Web UI
-db/        PostgreSQL migrations
-docs/      需求、架构、API、部署和发布文档
-scripts/   本地辅助脚本
-```
-
-## 检查
-
-```bash
-go test ./...
-go vet ./...
-(cd frontend && npm ci && npm run build)
-sh ./scripts/build-runner-artifacts.sh
-```
-
 ## 当前限制
 
 - 认证是简单登录门禁，没有自助注册或细粒度权限模型。
@@ -187,10 +130,10 @@ sh ./scripts/build-runner-artifacts.sh
 
 ## 相关文档
 
-- [部署指南](docs/deployment.md)
-- [贡献指南](CONTRIBUTING.md)
-- [安全策略](SECURITY.md)
-- [发布清单](docs/release-checklist.md)
-- [需求文档](docs/requirements.md)
-- [架构文档](docs/architecture.md)
-- [API Contract](docs/api-contract.md)
+- [部署指南](docs/deployment.md)：源码部署、外部数据库、环境变量和反向代理。
+- [贡献指南](CONTRIBUTING.md)：本地开发环境、检查和 PR 约定。
+- [安全策略](SECURITY.md)：安全边界、漏洞报告和部署建议。
+- [需求文档](docs/requirements.md)：产品需求和范围。
+- [架构文档](docs/architecture.md)：控制平面、设备代理和数据模型。
+- [API Contract](docs/api-contract.md)：HTTP、SSE 和 WebSocket 协议。
+- [发布清单](docs/release-checklist.md)：发布前检查项。

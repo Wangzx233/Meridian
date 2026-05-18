@@ -39,7 +39,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
-import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunMode, CreateServerRequest, EmailNotificationConfigRequest, MarkDoneRequest, Run, WorkbenchNotification } from "../../types";
+import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunMode, CreateServerRequest, EmailNotificationConfigRequest, ListResponse, MarkDoneRequest, Run, Task, WorkbenchNotification } from "../../types";
 import { isActiveRunStatus } from "../../utils";
 import {
   activeTaskStatuses,
@@ -431,6 +431,33 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
     onError: (error) => setNotice(errorNotice(error, t("app.emailDeleteFailed"))),
   });
 
+  const selectCreatedRun = (run: Run, task: Task) => {
+    queryClient.setQueryData<ListResponse<Run>>(["runs", run.task_id], (current) => {
+      const previousItems = current?.items ?? [];
+      const items = previousItems.some((item) => item.id === run.id)
+        ? previousItems.map((item) => (item.id === run.id ? run : item))
+        : [...previousItems, run];
+
+      return {
+        items: sortRunsByCreatedAt(items),
+        next_cursor: current?.next_cursor ?? null,
+      };
+    });
+    queryClient.setQueryData(["task", task.id], task);
+    if (selectedProjectId) {
+      queryClient.setQueryData<ListResponse<Task>>(["tasks", selectedProjectId], (current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          items: current.items.map((item) => (item.id === task.id ? task : item)),
+        };
+      });
+    }
+    setSelectedRunId(run.id);
+  };
+
   const createRunMutation = useMutation({
     mutationFn: (body: {
       message: string;
@@ -443,7 +470,7 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
     }) =>
       api.createRun(selectedTaskId!, body, crypto.randomUUID()),
     onSuccess: (response) => {
-      setSelectedRunId(response.run.id);
+      selectCreatedRun(response.run, response.task);
       setNotice({ tone: "success", message: t("app.runQueued") });
       void queryClient.invalidateQueries({ queryKey: ["runs", selectedTaskId] });
       void queryClient.invalidateQueries({ queryKey: ["tasks", selectedProjectId] });
@@ -463,7 +490,7 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
       context_item_ids: string[];
     }) => api.interruptRun(selectedTaskId!, body, crypto.randomUUID()),
     onSuccess: (response) => {
-      setSelectedRunId(response.run.id);
+      selectCreatedRun(response.run, response.task);
       setNotice({ tone: "info", message: t("app.runInterrupted") });
       void queryClient.invalidateQueries({ queryKey: ["runs", selectedTaskId] });
       void queryClient.invalidateQueries({ queryKey: ["tasks", selectedProjectId] });
@@ -847,5 +874,16 @@ function getLatestRun(runs: Run[]) {
       return run;
     }
     return runTime >= latestTime ? run : latest;
+  });
+}
+
+function sortRunsByCreatedAt(runs: Run[]) {
+  return [...runs].sort((left, right) => {
+    const leftTime = Date.parse(left.created_at);
+    const rightTime = Date.parse(right.created_at);
+    if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+      return 0;
+    }
+    return leftTime - rightTime;
   });
 }

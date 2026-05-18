@@ -359,6 +359,6 @@ export type CreateRunRequest = {
 };
 
 export type CreateRunResponse = {
-  run: Pick<Run, "id" | "task_id" | "mode" | "status">;
-  task: Pick<Task, "id" | "status" | "active_run_id">;
+  run: Run;
+  task: Task;
 };

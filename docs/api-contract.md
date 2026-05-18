@@ -677,8 +677,10 @@ Rules:
 - `summary` remains accepted for older clients and is stored as the memory
   problem when no structured problem is provided.
 - A memory draft button, when present, must create a normal visible Codex run and
-  only prefill the user's completion form. The draft is not saved until the user
-  confirms mark done.
+  only prefill the user's editable summary form. The draft is not saved until
+  the user explicitly saves it to context or marks the task done.
+- Saving a summary to context uses the context item API with type
+  `task_summary`; marking a task done remains a separate explicit action.
 - Marking a task done does not create a pending in-app notification. Email
   delivery, when configured, remains best-effort.
 - Each terminal Codex run also creates a pending in-app notification so the user

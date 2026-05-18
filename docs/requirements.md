@@ -326,9 +326,11 @@ produce a parseable draft for the form. Drafting must be visible as a normal
 turn, must not save the memory automatically, and must not inject the memory into
 future context automatically.
 
-The task session UI may group manual context selection and task memory summary
-as two views under the context panel. This keeps completion controls close to
-the context workflow without shrinking them into a constrained footer.
+The task session UI may keep manual context selection and task memory drafting
+as separate views under the context panel. A summary view should have an
+explicit action to save the edited summary as a `task_summary` context item.
+Marking the task done is a separate task-level action near the conversation
+composer, so saving reusable context and closing the task are not conflated.
 
 For the smallest MVP, this can be implemented as a simple user-written note plus
 optional fields before introducing project-specific memory templates.

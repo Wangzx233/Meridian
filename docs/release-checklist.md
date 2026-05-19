@@ -55,15 +55,18 @@ Expected runner outputs:
 
 ## 4. Tag And Publish
 
-Create and push a version tag:
+Create a version tag on the public GitHub release branch and push it to GitHub:
 
 ```bash
 git tag v0.1.0
-git push origin v0.1.0
+git push github v0.1.0
 ```
 
 The GitHub release workflow runs the quality gate, builds runner artifacts, and
 publishes a GitHub release with runner binaries and `SHA256SUMS.txt`.
+
+Private mirrors can keep the same tag for traceability, but GitHub is the public
+release surface.
 
 For a manual republish of an existing tag, run the `Release` workflow from
 GitHub Actions and provide the existing tag name.

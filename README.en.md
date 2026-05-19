@@ -11,6 +11,7 @@ English | [中文](README.md)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%2B-4169E1?logo=postgresql&logoColor=white)
 ![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?logo=githubactions&logoColor=white)
+[![Releases](https://img.shields.io/github/v/release/Wangzx233/Meridian?label=release)](https://github.com/Wangzx233/Meridian/releases)
 
 Meridian is a web console for managing task work across machines, projects, and long-lived Codex CLI sessions. It puts devices, projects, tasks, run output, history, and selected context into one browser-based control surface.
 
@@ -139,6 +140,7 @@ Go backend control plane
 - [Deployment Guide](docs/deployment.md): source deployment, external databases, environment variables, and reverse proxy setup.
 - [Contributing](CONTRIBUTING.md): local development setup, checks, and PR expectations.
 - [Security Policy](SECURITY.md): security boundaries, vulnerability reports, and deployment guidance.
+- [Changelog](CHANGELOG.md): version release notes.
 - [Requirements](docs/requirements.md): product requirements and scope.
 - [Architecture](docs/architecture.md): control plane, device agent, and data model.
 - [API Contract](docs/api-contract.md): HTTP, SSE, and WebSocket protocol.

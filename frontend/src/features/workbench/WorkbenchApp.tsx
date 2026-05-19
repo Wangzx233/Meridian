@@ -39,7 +39,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
-import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunMode, CreateServerRequest, EmailNotificationConfigRequest, ListResponse, MarkDoneRequest, Run, Task, WorkbenchNotification } from "../../types";
+import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunMode, CreateServerRequest, EmailNotificationConfigRequest, ListResponse, MarkDoneRequest, Project, Run, Task, WorkbenchNotification } from "../../types";
 import { isActiveRunStatus } from "../../utils";
 import {
   activeTaskStatuses,
@@ -342,6 +342,35 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
       void queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
     onError: (error) => setNotice(errorNotice(error, t("app.projectCreateFailed"))),
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: (projectId: string) => api.deleteProject(projectId),
+    onSuccess: (_, projectId) => {
+      queryClient.setQueriesData<ListResponse<Project>>({ queryKey: ["projects"] }, (current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          items: current.items.filter((project) => project.id !== projectId),
+        };
+      });
+      if (selectedProjectId === projectId) {
+        const nextProject = projects.find((project) => project.id !== projectId) ?? null;
+        setSelectedProjectId(nextProject?.id ?? null);
+        setSelectedTaskId(null);
+        setSelectedRunId(null);
+      }
+      setNotice({ tone: "info", message: t("app.projectDeleted") });
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      void queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      void queryClient.invalidateQueries({ queryKey: ["task"] });
+      void queryClient.invalidateQueries({ queryKey: ["runs"] });
+      void queryClient.invalidateQueries({ queryKey: ["context-items"] });
+      void queryClient.invalidateQueries({ queryKey: ["workbench-notifications", "pending"] });
+    },
+    onError: (error) => setNotice(errorNotice(error, t("app.projectDeleteFailed"))),
   });
 
   const createTaskMutation = useMutation({
@@ -754,6 +783,8 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
           updatingAllRunners={updateAllRunnersMutation.isPending}
           onCreateProject={(input) => createProjectMutation.mutate(input)}
           creatingProject={createProjectMutation.isPending}
+          onDeleteProject={(projectId) => deleteProjectMutation.mutate(projectId)}
+          deletingProject={deleteProjectMutation.isPending}
         />
 
         <ResizeHandle

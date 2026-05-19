@@ -73,6 +73,8 @@ export function NavPanel(props: {
     rules_path: string;
   }) => void;
   creatingProject: boolean;
+  onDeleteProject: (projectId: string) => void;
+  deletingProject: boolean;
 }) {
   const { t } = useI18n();
   const [isCreatingServer, setIsCreatingServer] = useState(false);
@@ -335,16 +337,34 @@ export function NavPanel(props: {
             >
               <div className="listStack">
                 {props.projects.map((project) => (
-                  <button
+                  <div
                     key={project.id}
-                    className={`navItem projectNavItem ${props.selectedProjectId === project.id ? "isSelected" : ""}`}
-                    type="button"
-                    onClick={() => props.onSelectProject(project.id)}
+                    className={`projectNavItem ${props.selectedProjectId === project.id ? "isSelected" : ""}`}
                   >
-                    <span className="itemTitle">{project.name}</span>
-                    <span className="itemSub mono">{project.workdir}</span>
-                    <span className="metaLine">{project.default_branch || t("nav.branchUnknown")}</span>
-                  </button>
+                    <button
+                      className="projectSelectButton"
+                      type="button"
+                      onClick={() => props.onSelectProject(project.id)}
+                    >
+                      <span className="itemTitle">{project.name}</span>
+                      <span className="itemSub mono">{project.workdir}</span>
+                      <span className="metaLine">{project.default_branch || t("nav.branchUnknown")}</span>
+                    </button>
+                    <button
+                      className="iconButton compact danger projectDeleteButton"
+                      type="button"
+                      disabled={props.deletingProject}
+                      onClick={() => {
+                        if (window.confirm(t("nav.deleteProjectConfirm", { name: project.name }))) {
+                          props.onDeleteProject(project.id);
+                        }
+                      }}
+                      aria-label={t("nav.deleteProject")}
+                      title={t("nav.deleteProject")}
+                    >
+                      {props.deletingProject ? <Loader2 className="spin" size={13} /> : <Trash2 size={13} />}
+                    </button>
+                  </div>
                 ))}
               </div>
             </LoadBoundary>

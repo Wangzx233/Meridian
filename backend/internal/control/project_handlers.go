@@ -37,6 +37,9 @@ func (a *API) handleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 			}
 			item, err := a.store.PatchProject(r.Context(), projectID, in)
 			a.respond(w, http.StatusOK, item, err)
+		case http.MethodDelete:
+			err := a.store.DeleteProject(r.Context(), projectID)
+			a.respond(w, http.StatusNoContent, nil, err)
 		default:
 			methodNotAllowed(w)
 		}

@@ -143,6 +143,8 @@ export const api = {
   getProject: (projectId: string) => request<Project>(`/projects/${encodeURIComponent(projectId)}`),
   patchProject: (projectId: string, body: Partial<CreateProjectRequest>) =>
     request<Project>(`/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteProject: (projectId: string) =>
+    request<void>(`/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" }),
   listProjectFiles: (projectId: string, path?: string) =>
     request<ProjectFileListing>(`/projects/${encodeURIComponent(projectId)}/files${queryString({ path })}`),
   readProjectFile: (projectId: string, path: string) =>

@@ -208,6 +208,76 @@ func TestStoreServerAliasIntegration(t *testing.T) {
 	}
 }
 
+func TestStoreDeleteProjectIntegration(t *testing.T) {
+	dsn := testDatabaseURL(t)
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect database: %v", err)
+	}
+	defer pool.Close()
+	resetIntegrationDB(t, pool)
+
+	store := NewStore(pool)
+	server, err := store.CreateServer(ctx, CreateServerInput{Name: "desktop", RunnerID: "runner_desktop"})
+	if err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+	project, err := store.CreateProject(ctx, CreateProjectInput{ServerID: server.ID, Name: "workbench", Workdir: "D:\\go\\workplace"})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, CreateTaskInput{Title: "Delete project"})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	contextItem, err := store.CreateContextItem(ctx, project.ID, CreateContextInput{
+		Scope:   "task",
+		TaskID:  &task.ID,
+		Type:    "note",
+		Title:   "delete context",
+		Content: "context",
+	})
+	if err != nil {
+		t.Fatalf("create context item: %v", err)
+	}
+	createdRun, err := store.CreateRun(ctx, CreateRunInput{
+		TaskID:         task.ID,
+		Message:        "run",
+		Mode:           "new",
+		ContextItemIDs: []string{contextItem.ID},
+	})
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if _, err := store.MarkRunStarted(ctx, createdRun.Run.ID, server.RunnerID, time.Now().UTC()); err != nil {
+		t.Fatalf("mark run started: %v", err)
+	}
+	complete, err := store.CompleteRun(ctx, CompleteRunInput{
+		RunID:   createdRun.Run.ID,
+		Status:  RunStatusSucceeded,
+		EndedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("complete run: %v", err)
+	}
+	if _, err := store.CreateRunFinishedNotification(ctx, complete.Run); err != nil {
+		t.Fatalf("create notification: %v", err)
+	}
+
+	if err := store.DeleteProject(ctx, project.ID); err != nil {
+		t.Fatalf("delete project: %v", err)
+	}
+	assertTableCount(t, pool, "projects", 0)
+	assertTableCount(t, pool, "tasks", 0)
+	assertTableCount(t, pool, "runs", 0)
+	assertTableCount(t, pool, "run_events", 0)
+	assertTableCount(t, pool, "context_items", 0)
+	assertTableCount(t, pool, "run_context_items", 0)
+	assertTableCount(t, pool, "workbench_notifications", 0)
+	assertTableCount(t, pool, "servers", 1)
+}
+
 func TestCreateRunRecoversSessionFromHistoricalRunIntegration(t *testing.T) {
 	dsn := os.Getenv("CTW_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -526,4 +596,15 @@ func testDatabaseURL(t *testing.T) string {
 		t.Skip("CTW_TEST_DATABASE_URL is not set")
 	}
 	return dsn
+}
+
+func assertTableCount(t *testing.T, pool *pgxpool.Pool, table string, want int) {
+	t.Helper()
+	var count int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM `+table).Scan(&count); err != nil {
+		t.Fatalf("count %s: %v", table, err)
+	}
+	if count != want {
+		t.Fatalf("%s count = %d, want %d", table, count, want)
+	}
 }

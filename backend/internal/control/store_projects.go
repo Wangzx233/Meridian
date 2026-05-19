@@ -70,3 +70,39 @@ func (s *Store) PatchProject(ctx context.Context, id string, in PatchProjectInpu
 		id, serverID, name, workdir, defaultBranch, rulesPath)
 	return scanProject(row)
 }
+
+func (s *Store) DeleteProject(ctx context.Context, id string) error {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer rollback(ctx, tx)
+
+	_, err = tx.Exec(ctx, `
+		DELETE FROM run_context_items rci
+		USING runs r, tasks t
+		WHERE rci.run_id=r.id
+		  AND r.task_id=t.id
+		  AND t.project_id=$1`, id)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(ctx, `
+		DELETE FROM run_context_items rci
+		USING context_items ci
+		WHERE rci.context_item_id=ci.id
+		  AND ci.project_id=$1`, id)
+	if err != nil {
+		return err
+	}
+
+	tag, err := tx.Exec(ctx, `DELETE FROM projects WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit(ctx)
+}

@@ -719,9 +719,52 @@ summary {
 }
 
 .projectNavItem {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 4px;
   margin-left: 10px;
   width: calc(100% - 10px);
+  min-height: 56px;
+  padding: 4px;
+  border: 1px solid transparent;
   border-left-color: var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+}
+
+.projectNavItem:hover {
+  border-color: var(--border);
+  background: var(--surface-subtle);
+}
+
+.projectNavItem.isSelected {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  background: var(--primary-soft);
+}
+
+.projectSelectButton {
+  min-width: 0;
+  min-height: 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.projectDeleteButton {
+  opacity: 0.72;
+}
+
+.projectNavItem:hover .projectDeleteButton,
+.projectNavItem:focus-within .projectDeleteButton {
+  opacity: 1;
 }
 
 .itemTitle,

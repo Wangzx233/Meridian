@@ -492,6 +492,7 @@ GET  /api/v1/projects?server_id={server_id}
 POST /api/v1/projects
 GET  /api/v1/projects/{project_id}
 PATCH /api/v1/projects/{project_id}
+DELETE /api/v1/projects/{project_id}
 GET  /api/v1/projects/{project_id}/files?path={relative_project_path}
 GET  /api/v1/projects/{project_id}/files/content?path={relative_project_path}
 PUT  /api/v1/projects/{project_id}/files/content
@@ -533,6 +534,9 @@ Project file listing response:
 
 Rules:
 
+- Deleting a project removes its tasks, runs, run events, selected context
+  snapshots, project/task context items, memories, and workbench notifications.
+  It does not delete files from the project's `workdir`.
 - The endpoint requires a currently connected runner for the project's server.
 - The runner must report the `project_files` capability.
 - `path` is project-root relative. Empty `path` lists the project root.

@@ -70,6 +70,9 @@ docker compose up -d --build
 
 面向公网或多人使用时，建议放到 HTTPS 反向代理后面。如果 Meridian 只需要被本机反向代理访问，可以在 `.env` 中设置 `MERIDIAN_HTTP_BIND=127.0.0.1`。
 
+## 源码部署
+[部署指南](docs/deployment.md)
+
 ## 连接第一台设备
 
 每台执行任务的设备都需要先安装 Codex CLI。随后直接使用 Meridian 页面里的安装脚本：
@@ -110,6 +113,7 @@ docker compose up -d --build
 | 实时输出 | 设备代理将 Codex run event 流式传回控制台。 |
 | 项目工具 | 支持项目文件浏览、轻量编辑和项目目录内终端命令。 |
 | 设备代理分发 | 后端提供 Linux、macOS、Windows 设备代理安装端点。 |
+| 及时通知 | 任务完成后可选择UI、游览器、邮件三种提醒方式 |
 
 ## 架构速览
 
@@ -130,7 +134,7 @@ Go backend control plane
 - 设备代理安装端点面向可信环境。
 - 设备代理 artifacts 暂未签名。
 - Codex CLI 需要在执行任务的设备上单独安装。
-- 第一版只支持手动上下文选择，不做自动推荐或注入。
+- 目前只支持手动上下文选择，不做自动推荐或注入。
 - 成功的 Codex run 不会自动完成任务，必须由用户手动标记 done。
 
 ## 相关文档

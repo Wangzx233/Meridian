@@ -11,7 +11,7 @@
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%2B-4169E1?logo=postgresql&logoColor=white)
 ![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?logo=githubactions&logoColor=white)
-[![linux.do](https://img.shields.io/badge/linux.do-友链-2D8F6F)](https://linux.do/)
+[![linux.do](https://img.shields.io/badge/linux.do-2D8F6F)](https://linux.do/)
 
 Meridian 是一个通过 Web 管理任务的控制台。它把多台设备、多个项目、多个任务放到一个界面里，让你随时打开浏览器，一键切换设备、项目和任务。自动提炼任务摘要，需要时可手动选择传入其他设备、项目、任务上下文。
 

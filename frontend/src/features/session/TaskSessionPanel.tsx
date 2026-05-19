@@ -36,8 +36,9 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
+import { api } from "../../api";
 import type {
   CodexReasoningEffort,
   CodexServiceTier,
@@ -64,7 +65,7 @@ import { useStoredPanelSize, useStoredString } from "../../shared/storage";
 import { EmptyState, Fact, LoadingState, ResizeHandle, StatusBadge } from "../../shared/ui";
 import { AgentsFilePanel } from "../agents/AgentsFilePanel";
 import { ContextPanel } from "../context/ContextPanel";
-import { ProjectFilesPanel } from "../files/ProjectFilesPanel";
+import { ProjectFilesPanel, type ProjectFileOpenRequest } from "../files/ProjectFilesPanel";
 import { PromptPanel, RunHistory, RunOutputWorkspace } from "../runs/RunOutputWorkspace";
 import { TerminalPanel } from "../terminal/TerminalPanel";
 import { RunComposer } from "./RunComposer";
@@ -156,10 +157,13 @@ export function TaskSessionPanel(props: {
   const [activeWorkbenchTab, setActiveWorkbenchTab] = useState<WorkbenchTab>("output");
   const [visitedWorkbenchTabs, setVisitedWorkbenchTabs] = useState<WorkbenchTab[]>(["output"]);
   const [visitedWorkbenchProjectId, setVisitedWorkbenchProjectId] = useState<string | null>(null);
+  const projectId = props.project?.id ?? null;
+  const [projectFileOpenRequest, setProjectFileOpenRequest] = useState<ProjectFileOpenRequest | null>(null);
+  const projectFileOpenRequestIdRef = useRef(0);
+  const currentProjectIdRef = useRef(projectId);
   const [activeSideTab, setActiveSideTab] = useState<SidePanelTab>("context");
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
   const [composerCollapsed, setComposerCollapsed] = useState(false);
-  const projectId = props.project?.id ?? null;
   const [sidePanelWidth, setSidePanelWidth] = useStoredPanelSize(
     "ctw.sidePanelWidth",
     sidePanelDefaultWidth,
@@ -226,12 +230,18 @@ export function TaskSessionPanel(props: {
   useEffect(() => {
     setActiveWorkbenchTab("output");
     setActiveSideTab("context");
+    setProjectFileOpenRequest(null);
   }, [props.task?.id]);
 
   useEffect(() => {
     setActiveWorkbenchTab("output");
     setVisitedWorkbenchTabs(["output"]);
     setVisitedWorkbenchProjectId(projectId);
+    setProjectFileOpenRequest(null);
+  }, [projectId]);
+
+  useEffect(() => {
+    currentProjectIdRef.current = projectId;
   }, [projectId]);
 
   useEffect(() => {
@@ -261,6 +271,34 @@ export function TaskSessionPanel(props: {
   const selectWorkbenchTab = (tab: WorkbenchTab) => {
     setActiveWorkbenchTab(tab);
     setVisitedWorkbenchProjectId(projectId);
+  };
+
+  const handleProjectFileLinkClick = (href: string) => {
+    const targetPath = projectFilePathFromHref(href, props.project?.workdir ?? "");
+    if (!targetPath || !props.project) {
+      return false;
+    }
+    void openExistingProjectFile(props.project.id, targetPath);
+    return true;
+  };
+
+  const openExistingProjectFile = async (clickedProjectId: string, targetPath: string) => {
+    try {
+      const listing = await api.listProjectFiles(clickedProjectId, parentProjectPath(targetPath));
+      const entry = listing.entries.find((item) => normalizeProjectPath(item.path) === targetPath);
+      if (!entry || currentProjectIdRef.current !== clickedProjectId) {
+        return;
+      }
+      projectFileOpenRequestIdRef.current += 1;
+      setProjectFileOpenRequest({
+        id: projectFileOpenRequestIdRef.current,
+        path: entry.path,
+        isDir: entry.is_dir,
+      });
+      selectWorkbenchTab("files");
+    } catch {
+      // Missing files, disconnected runners, and unsupported file browsing are intentionally silent for link clicks.
+    }
   };
 
   const submitRun = (event: FormEvent) => {
@@ -696,6 +734,7 @@ export function TaskSessionPanel(props: {
                   activeRun={props.activeRun}
                   onCancelRun={props.onCancelRun}
                   cancelingRun={props.cancelingRun}
+                  onProjectFileLinkClick={handleProjectFileLinkClick}
                 />
               </div>
             ) : null}
@@ -708,7 +747,7 @@ export function TaskSessionPanel(props: {
 
             {mountedWorkspaceTabs.includes("files") ? (
               <div className="workspacePane" hidden={activeWorkspaceTab !== "files"}>
-                <ProjectFilesPanel server={props.server} project={props.project} />
+                <ProjectFilesPanel server={props.server} project={props.project} openRequest={projectFileOpenRequest} />
               </div>
             ) : null}
           </div>
@@ -943,6 +982,117 @@ function normalizeGoalText(value: string) {
 
 function isGoalCommand(message: string) {
   return message === "/goal" || message.startsWith("/goal ");
+}
+
+function projectFilePathFromHref(href: string, projectWorkdir: string): string | null {
+  let value = decodeLinkPath(href);
+  if (!value) {
+    return null;
+  }
+  value = stripLinkPathDecorators(value);
+  if (!value || !looksLikeFilePathLink(value)) {
+    return null;
+  }
+
+  if (isAbsolutePath(value)) {
+    return absoluteProjectFilePathToRelative(value, projectWorkdir);
+  }
+  return normalizeProjectPath(value);
+}
+
+function decodeLinkPath(href: string): string | null {
+  let value = href.trim();
+  if (!value || value.startsWith("#")) {
+    return null;
+  }
+  const windowsPath = /^[A-Za-z]:[\\/]/.test(value);
+  const protocol = value.match(/^([A-Za-z][A-Za-z0-9+.-]*):/);
+  if (protocol && !windowsPath) {
+    if (protocol[1].toLowerCase() !== "file") {
+      return null;
+    }
+    try {
+      value = new URL(value).pathname;
+    } catch {
+      return null;
+    }
+  }
+  try {
+    return decodeURI(value);
+  } catch {
+    return value;
+  }
+}
+
+function stripLinkPathDecorators(path: string): string {
+  let value = path.trim().replace(/\\/g, "/");
+  const queryIndex = value.indexOf("?");
+  const hashIndex = value.indexOf("#");
+  const cutIndex = [queryIndex, hashIndex].filter((index) => index >= 0).sort((left, right) => left - right)[0];
+  if (cutIndex !== undefined) {
+    value = value.slice(0, cutIndex);
+  }
+  value = value.replace(/^\/([A-Za-z]:\/)/, "$1");
+  value = value.replace(/:(\d+)(?::\d+)?$/, "");
+  return value.trim();
+}
+
+function looksLikeFilePathLink(path: string): boolean {
+  const normalized = path.replace(/\\/g, "/");
+  if (isAbsolutePath(normalized) || normalized.startsWith(".") || normalized.includes("/")) {
+    return true;
+  }
+  const name = normalized.split("/").pop() ?? "";
+  return /^[A-Za-z0-9_.-]+\.[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name);
+}
+
+function isAbsolutePath(path: string): boolean {
+  return /^[A-Za-z]:\//.test(path) || path.startsWith("/");
+}
+
+function absoluteProjectFilePathToRelative(path: string, projectWorkdir: string): string | null {
+  const root = normalizeAbsolutePath(projectWorkdir);
+  const target = normalizeAbsolutePath(path);
+  if (!root || !target) {
+    return null;
+  }
+  const caseInsensitive = /^[A-Za-z]:\//.test(root);
+  const rootCompare = caseInsensitive ? root.toLowerCase() : root;
+  const targetCompare = caseInsensitive ? target.toLowerCase() : target;
+  if (targetCompare === rootCompare) {
+    return null;
+  }
+  const rootPrefix = rootCompare.endsWith("/") ? rootCompare : `${rootCompare}/`;
+  if (!targetCompare.startsWith(rootPrefix)) {
+    return null;
+  }
+  return normalizeProjectPath(target.slice(rootPrefix.length));
+}
+
+function normalizeAbsolutePath(path: string): string {
+  return stripLinkPathDecorators(path).replace(/\/+$/, "");
+}
+
+function normalizeProjectPath(path: string): string {
+  const parts: string[] = [];
+  for (const part of path.replace(/\\/g, "/").split("/")) {
+    if (!part || part === ".") {
+      continue;
+    }
+    if (part === "..") {
+      return "";
+    }
+    parts.push(part);
+  }
+  return parts.join("/");
+}
+
+function parentProjectPath(path: string): string {
+  const index = path.lastIndexOf("/");
+  if (index <= 0) {
+    return "";
+  }
+  return path.slice(0, index);
 }
 
 function taskMemoryDraftHasDetails(memory: TaskMemoryDraft): boolean {

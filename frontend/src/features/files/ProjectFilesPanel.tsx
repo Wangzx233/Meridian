@@ -52,11 +52,18 @@ type FileDialogState =
   | { action: "delete"; path: string; isDir: boolean }
   | null;
 
-export function ProjectFilesPanel(props: { server: Server | null; project: Project }) {
+export type ProjectFileOpenRequest = {
+  id: number;
+  path: string;
+  isDir: boolean;
+};
+
+export function ProjectFilesPanel(props: { server: Server | null; project: Project; openRequest?: ProjectFileOpenRequest | null }) {
   const queryClient = useQueryClient();
   const [path, setPath] = useState("");
   const [manualPath, setManualPath] = useState("");
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+  const [handledOpenRequestId, setHandledOpenRequestId] = useState<number | null>(null);
   const [editorValue, setEditorValue] = useState("");
   const [dirty, setDirty] = useState(false);
   const [dialog, setDialog] = useState<FileDialogState>(null);
@@ -117,11 +124,32 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
     setPath("");
     setManualPath("");
     setSelectedFilePath(null);
+    setHandledOpenRequestId(null);
     setEditorValue("");
     setDirty(false);
     setActionError(null);
     setSaveError(null);
   }, [props.project.id]);
+
+  useEffect(() => {
+    const request = props.openRequest;
+    if (!request || request.id === handledOpenRequestId) {
+      return;
+    }
+    setHandledOpenRequestId(request.id);
+    setActionError(null);
+    setSaveError(null);
+    if (request.isDir) {
+      setPath(request.path);
+      setManualPath(request.path);
+      setSelectedFilePath(null);
+      return;
+    }
+    const parent = parentDirectory(request.path);
+    setPath(parent);
+    setManualPath(parent);
+    setSelectedFilePath(request.path);
+  }, [handledOpenRequestId, props.openRequest]);
 
   useEffect(() => {
     if (activeContent) {

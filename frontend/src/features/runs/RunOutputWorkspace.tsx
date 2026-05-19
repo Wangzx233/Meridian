@@ -53,6 +53,7 @@ export function RunOutputWorkspace(props: {
   activeRun: Run | null;
   onCancelRun: (runId: string) => void;
   cancelingRun: boolean;
+  onProjectFileLinkClick?: (href: string) => boolean;
 }) {
   const { events, state } = useRunEventStream(props.run?.id ?? null, Boolean(props.run));
   const outputRef = useRef<HTMLDivElement | null>(null);
@@ -137,13 +138,24 @@ export function RunOutputWorkspace(props: {
             {state === "error" ? "Unable to open the live stream. Stored events can still load on refresh." : "Waiting for Codex output."}
           </div>
         ) : (
-          visibleEvents.map((event) => <TranscriptEvent key={`${event.run_id}-${event.seq}`} event={event} renderMarkdown={renderMarkdown} />)
+          visibleEvents.map((event) => (
+            <TranscriptEvent
+              key={`${event.run_id}-${event.seq}`}
+              event={event}
+              renderMarkdown={renderMarkdown}
+              onProjectFileLinkClick={props.onProjectFileLinkClick}
+            />
+          ))
         )}
 
         {props.run.final_message ? (
           <article className="messageBlock assistantMessage final">
             <div className="messageRole">Final</div>
-            <MessageText text={props.run.final_message} markdown={renderMarkdown} />
+            <MessageText
+              text={props.run.final_message}
+              markdown={renderMarkdown}
+              onProjectFileLinkClick={props.onProjectFileLinkClick}
+            />
           </article>
         ) : null}
       </div>
@@ -152,7 +164,11 @@ export function RunOutputWorkspace(props: {
 }
 
 
-function TranscriptEvent(props: { event: RunEvent; renderMarkdown: boolean }) {
+function TranscriptEvent(props: {
+  event: RunEvent;
+  renderMarkdown: boolean;
+  onProjectFileLinkClick?: (href: string) => boolean;
+}) {
   const view = transcriptView(props.event);
   if (view.hidden) {
     return null;
@@ -161,7 +177,11 @@ function TranscriptEvent(props: { event: RunEvent; renderMarkdown: boolean }) {
   return (
     <article className={`messageBlock ${view.kind}`}>
       <div className="messageRole">{view.role}</div>
-      <MessageText text={view.text} markdown={props.renderMarkdown && view.markdown} />
+      <MessageText
+        text={view.text}
+        markdown={props.renderMarkdown && view.markdown}
+        onProjectFileLinkClick={props.onProjectFileLinkClick}
+      />
       {props.event.event_type === "codex.event" && props.event.payload.raw !== undefined ? (
         <details className="rawDetails">
           <summary>Raw event</summary>
@@ -173,8 +193,12 @@ function TranscriptEvent(props: { event: RunEvent; renderMarkdown: boolean }) {
 }
 
 
-function MessageText(props: { text: string; markdown: boolean }) {
-  return props.markdown ? <MarkdownContent>{props.text}</MarkdownContent> : <pre>{props.text}</pre>;
+function MessageText(props: { text: string; markdown: boolean; onProjectFileLinkClick?: (href: string) => boolean }) {
+  return props.markdown ? (
+    <MarkdownContent onLinkClick={props.onProjectFileLinkClick}>{props.text}</MarkdownContent>
+  ) : (
+    <pre>{props.text}</pre>
+  );
 }
 
 

@@ -146,3 +146,7 @@ Go backend control plane
 - [架构文档](docs/architecture.md)：控制平面、设备代理和数据模型。
 - [API Contract](docs/api-contract.md)：HTTP、SSE 和 WebSocket 协议。
 - [发布清单](docs/release-checklist.md)：发布前检查项。
+
+## 友情链接
+
+- [linux.do](https://linux.do/)

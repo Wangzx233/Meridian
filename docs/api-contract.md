@@ -472,10 +472,16 @@ Runner install endpoints:
 - `GET /api/v1/runner/install.ps1` installs the Windows amd64 runner. User mode
   is the default; `run_as=system` installs a Scheduled Task.
 - `GET /api/v1/runner/install.sh` installs Linux amd64/arm64 runners as a
-  systemd service when systemd is available. In containers or other non-systemd
-  Linux environments, it falls back to a standalone `nohup` background process
-  under `/opt/codex-task-workbench/runner`. macOS amd64/arm64 runners install as
-  the launchd daemon `com.codex-task-workbench.runner`.
+  systemd service when systemd is available. Linux defaults to `run_as=user`,
+  setting the service `User`, `HOME`, `USER`, and `LOGNAME` to the invoking
+  user, or to the owner of an absolute `codex_path` when reinstalling from an
+  existing root-runner. This keeps Codex config lookup aligned with the user's
+  `~/.codex`. Passing `run_as=system` preserves the previous root service
+  behavior. In containers or other non-systemd Linux environments, it falls back
+  to a standalone `nohup` background process under
+  `/opt/codex-task-workbench/runner`, started as the same resolved user when
+  `run_as=user`. macOS amd64/arm64 runners install as the launchd daemon
+  `com.codex-task-workbench.runner`.
 - If `runner_id` is omitted, the installer derives one from the target machine.
   Passing `runner_id` is only for reinstalling the same server identity.
 

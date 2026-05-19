@@ -180,6 +180,10 @@ func (a *API) handleRunnerInstallShell(w http.ResponseWriter, r *http.Request) {
 	if codexPath == "''" {
 		codexPath = "'codex'"
 	}
+	runAs := shellQuote(strings.TrimSpace(r.URL.Query().Get("run_as")))
+	if runAs == "''" {
+		runAs = "'user'"
+	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = fmt.Fprintf(w, `#!/usr/bin/env sh
 set -eu
@@ -188,6 +192,15 @@ RUNNER_ID=%s
 CODEX_PATH=%s
 RUNNER_TOKEN=%s
 CODEX_BYPASS_APPROVALS_AND_SANDBOX=%s
+RUN_AS=%s
+if [ -z "$RUN_AS" ]; then
+  RUN_AS="user"
+fi
+RUN_AS="$(printf '%%s' "$RUN_AS" | tr '[:upper:]' '[:lower:]')"
+case "$RUN_AS" in
+  user|system) ;;
+  *) echo "run_as must be user or system." >&2; exit 1 ;;
+esac
 DEFAULT_RUNNER_PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 if [ -n "${PATH:-}" ]; then
   RUNNER_PATH="$PATH:$DEFAULT_RUNNER_PATH"
@@ -271,6 +284,40 @@ if [ "$(id -u)" -ne 0 ]; then
 else
   SUDO=""
 fi
+RUNNER_USER=""
+RUNNER_HOME=""
+RUNNER_ENV_USER_LINES=""
+RUNNER_WRAPPER_USER_EXPORTS=""
+RUNNER_SERVICE_USER_LINES=""
+if [ "$PLATFORM" = "linux" ] && [ "$RUN_AS" = "user" ]; then
+  if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER:-}" != "root" ]; then
+    RUNNER_USER="$SUDO_USER"
+  else
+    RUNNER_USER="$(id -un)"
+  fi
+  if [ "$RUNNER_USER" = "root" ] && [ -e "$CODEX_PATH" ]; then
+    CODEX_OWNER="$(stat -c '%%U' "$CODEX_PATH" 2>/dev/null || true)"
+    if [ -n "$CODEX_OWNER" ] && [ "$CODEX_OWNER" != "root" ] && [ "$CODEX_OWNER" != "UNKNOWN" ]; then
+      RUNNER_USER="$CODEX_OWNER"
+    fi
+  fi
+  RUNNER_HOME="$(getent passwd "$RUNNER_USER" 2>/dev/null | awk -F: '{print $6; exit}' || true)"
+  if [ -z "$RUNNER_HOME" ] && [ "$RUNNER_USER" = "$(id -un)" ]; then
+    RUNNER_HOME="${HOME:-}"
+  fi
+  if [ -z "$RUNNER_HOME" ]; then
+    echo "Unable to determine home directory for runner user '$RUNNER_USER'." >&2
+    exit 1
+  fi
+  RUNNER_ENV_USER_LINES="HOME=$RUNNER_HOME
+USER=$RUNNER_USER
+LOGNAME=$RUNNER_USER"
+  RUNNER_WRAPPER_USER_EXPORTS="export HOME=$RUNNER_HOME
+export USER=$RUNNER_USER
+export LOGNAME=$RUNNER_USER"
+  RUNNER_SERVICE_USER_LINES="User=$RUNNER_USER
+WorkingDirectory=$RUNNER_HOME"
+fi
 $SUDO mkdir -p "$INSTALL_DIR"
 echo "Downloading runner from $CONTROL_URL/api/v1/runner/artifacts/$ARTIFACT"
 RUNNER_TMP="$INSTALL_DIR/codex-task-workbench-runner.$$.download"
@@ -304,12 +351,16 @@ export RUNNER_ID=$RUNNER_ID
 export CODEX_PATH=$CODEX_PATH
 export RUNNER_TOKEN=$RUNNER_TOKEN
 export CODEX_BYPASS_APPROVALS_AND_SANDBOX=$CODEX_BYPASS_APPROVALS_AND_SANDBOX
-export RUNNER_RUN_AS=standalone
+export RUNNER_RUN_AS=$RUN_AS
 export PATH=$RUNNER_PATH
+$RUNNER_WRAPPER_USER_EXPORTS
 cd '$INSTALL_DIR'
 exec '$RUNNER_BIN'
 EOF"
       $SUDO chmod +x "$WRAPPER"
+      if [ "$RUN_AS" = "user" ] && [ -n "$RUNNER_USER" ]; then
+        $SUDO chown -R "$RUNNER_USER" "$INSTALL_DIR"
+      fi
       if [ -f "$PID_FILE" ]; then
         OLD_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
         case "$OLD_PID" in
@@ -322,7 +373,16 @@ EOF"
           fi
         fi
       fi
-      $SUDO sh -c "cd '$INSTALL_DIR' && nohup '$WRAPPER' >> '$RUNNER_LOG' 2>> '$RUNNER_ERR_LOG' < /dev/null & echo \$! > '$PID_FILE'"
+      START_CMD="cd '$INSTALL_DIR' && nohup '$WRAPPER' >> '$RUNNER_LOG' 2>> '$RUNNER_ERR_LOG' < /dev/null & echo \$! > '$PID_FILE'"
+      if [ "$RUN_AS" = "user" ] && [ -n "$RUNNER_USER" ] && [ "$(id -un)" != "$RUNNER_USER" ]; then
+        if command -v runuser >/dev/null 2>&1; then
+          $SUDO runuser -u "$RUNNER_USER" -- sh -c "$START_CMD"
+        else
+          $SUDO su -s /bin/sh "$RUNNER_USER" -c "$START_CMD"
+        fi
+      else
+        sh -c "$START_CMD"
+      fi
       echo "Runner installed and started in standalone background mode with RUNNER_ID=$RUNNER_ID pid_file=$PID_FILE log=$RUNNER_LOG"
       echo "This host is not running systemd; restart the runner manually or rerun this installer after container/host restarts."
     }
@@ -332,8 +392,9 @@ RUNNER_ID=$RUNNER_ID
 CODEX_PATH=$CODEX_PATH
 RUNNER_TOKEN=$RUNNER_TOKEN
 CODEX_BYPASS_APPROVALS_AND_SANDBOX=$CODEX_BYPASS_APPROVALS_AND_SANDBOX
-RUNNER_RUN_AS=system
+RUNNER_RUN_AS=$RUN_AS
 PATH=$RUNNER_PATH
+$RUNNER_ENV_USER_LINES
 EOF"
     if linux_systemd_available; then
       $SUDO sh -c "cat > '$SERVICE_FILE' <<EOF
@@ -344,6 +405,7 @@ Wants=network-online.target
 
 [Service]
 EnvironmentFile=$ENV_FILE
+$RUNNER_SERVICE_USER_LINES
 ExecStart=$RUNNER_BIN
 Restart=always
 RestartSec=5
@@ -404,7 +466,7 @@ EOF"
     echo "Runner installed and started as launchd service $LAUNCHD_LABEL with RUNNER_ID=$RUNNER_ID"
     ;;
 esac
-`, shellQuote(controlURL), runnerID, codexPath, runnerToken, codexBypassApprovalsAndSandbox)
+`, shellQuote(controlURL), runnerID, codexPath, runnerToken, codexBypassApprovalsAndSandbox, runAs)
 }
 
 func (a *API) handleRunnerArtifact(w http.ResponseWriter, r *http.Request) {

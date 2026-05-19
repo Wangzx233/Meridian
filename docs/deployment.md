@@ -124,6 +124,20 @@ The web UI's top-right runner install menu uses these artifacts through the
 backend install endpoints. Prefer that UI flow over copying endpoint URLs from
 documentation.
 
+## Runner User And Codex Config
+
+Codex CLI stores its login and settings under the OS user's home directory, for
+example `~/.codex` on Linux. Install and run the Linux runner as the same user
+that installed and logged in to Codex CLI. The Linux installer defaults to
+`run_as=user`, creates the systemd service with that user, and sets `HOME`,
+`USER`, and `LOGNAME` so Codex reads the same `~/.codex` files it uses in an
+SSH shell.
+
+Use `run_as=system` only when Codex is intentionally configured for root. If a
+previous install ran as root while `codex_path` pointed into `/home/<user>`,
+rerun the installer from that user or pass the absolute `codex_path`; the
+installer will infer the runner user from that Codex executable owner.
+
 ## Environment Variables
 
 ### Compose

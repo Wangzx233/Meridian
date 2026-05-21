@@ -15,7 +15,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const maxProjectFileUploadBytes int64 = 10 * 1024 * 1024
+const maxProjectFileUploadBytes int64 = 5 * 1024 * 1024
 
 func (a *API) handleProjectFiles(w http.ResponseWriter, r *http.Request, projectID string) {
 	if r.Method != http.MethodGet {
@@ -69,6 +69,11 @@ func (a *API) handleProjectFileUpload(w http.ResponseWriter, r *http.Request, pr
 		methodNotAllowed(w)
 		return
 	}
+	contentType := strings.ToLower(r.Header.Get("Content-Type"))
+	if strings.Contains(contentType, "application/json") {
+		a.handleProjectFileUploadJSON(w, r, projectID)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxProjectFileUploadBytes+1024*1024)
 	if err := r.ParseMultipartForm(maxProjectFileUploadBytes); err != nil {
 		writeError(w, http.StatusBadRequest, "validation_error", "Invalid multipart upload.", nil)
@@ -102,16 +107,44 @@ func (a *API) handleProjectFileUpload(w http.ResponseWriter, r *http.Request, pr
 		writeError(w, http.StatusRequestEntityTooLarge, "validation_error", "File is too large.", nil)
 		return
 	}
-	filename := path.Base(path.Clean(strings.ReplaceAll(header.Filename, "\\", "/")))
-	if filename == "." || filename == "/" || strings.TrimSpace(filename) == "" {
+	filename := uploadFilename(header.Filename)
+	if filename == "" {
 		writeError(w, http.StatusBadRequest, "validation_error", "Filename is required.", nil)
 		return
 	}
-	targetPath := filename
-	if targetDir != "" && targetDir != "." {
-		targetPath = strings.Trim(strings.ReplaceAll(targetDir, "\\", "/"), "/") + "/" + filename
-	}
+	a.forwardProjectFileUpload(w, r, projectID, uploadTargetPath(targetDir, filename), data, createDirs)
+}
 
+func (a *API) handleProjectFileUploadJSON(w http.ResponseWriter, r *http.Request, projectID string) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxProjectFileUploadBytes*2)
+	var in struct {
+		Path          string `json:"path"`
+		Filename      string `json:"filename"`
+		ContentBase64 string `json:"content_base64"`
+		CreateDirs    bool   `json:"create_dirs"`
+	}
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	content, err := base64.StdEncoding.DecodeString(strings.TrimSpace(in.ContentBase64))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation_error", "Invalid base64 file content.", nil)
+		return
+	}
+	if int64(len(content)) > maxProjectFileUploadBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "validation_error", "File is too large.", nil)
+		return
+	}
+	filename := uploadFilename(in.Filename)
+	if filename == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "Filename is required.", nil)
+		return
+	}
+	targetPath := uploadTargetPath(in.Path, filename)
+	a.forwardProjectFileUpload(w, r, projectID, targetPath, content, in.CreateDirs)
+}
+
+func (a *API) forwardProjectFileUpload(w http.ResponseWriter, r *http.Request, projectID, targetPath string, data []byte, createDirs bool) {
 	project, server, ok := a.projectAndServerForRunnerRequest(w, r, projectID, "project_file_upload")
 	if !ok {
 		return
@@ -136,6 +169,22 @@ func (a *API) handleProjectFileUpload(w http.ResponseWriter, r *http.Request, pr
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func uploadFilename(filename string) string {
+	filename = path.Base(path.Clean(strings.ReplaceAll(filename, "\\", "/")))
+	if filename == "." || filename == "/" || strings.TrimSpace(filename) == "" {
+		return ""
+	}
+	return filename
+}
+
+func uploadTargetPath(targetDir, filename string) string {
+	targetDir = strings.Trim(strings.ReplaceAll(strings.TrimSpace(targetDir), "\\", "/"), "/")
+	if targetDir == "" || targetDir == "." {
+		return filename
+	}
+	return targetDir + "/" + filename
 }
 
 func (a *API) handleProjectFileContent(w http.ResponseWriter, r *http.Request, projectID string) {

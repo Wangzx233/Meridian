@@ -48,15 +48,25 @@ export const apiBaseUrl = API_BASE;
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const hasBody = init.body !== undefined && init.body !== null;
   const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-      ...(hasBody && !isFormData ? { "Content-Type": "application/json" } : {}),
-      ...init.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        ...(hasBody && !isFormData ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
+      },
+    });
+  } catch (error) {
+    const cause = error instanceof Error && error.message ? error.message : "Network request failed.";
+    throw new ApiError(
+      0,
+      `Network request failed before the control plane returned a response. ${cause}`,
+      "network_error",
+    );
+  }
 
   const contentType = response.headers.get("content-type") ?? "";
   const isJson = contentType.includes("application/json");
@@ -99,10 +109,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
-async function requestForm<T>(path: string, body: FormData): Promise<T> {
-  return request<T>(path, {
-    method: "POST",
-    body,
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new ApiError(0, "Unable to read the selected file.", "file_read_error"));
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.readAsDataURL(file);
   });
 }
 
@@ -166,11 +182,17 @@ export const api = {
       body: JSON.stringify(body),
     }),
   uploadProjectFile: (projectId: string, body: { path: string; file: File; create_dirs?: boolean }) => {
-    const form = new FormData();
-    form.set("path", body.path);
-    form.set("create_dirs", body.create_dirs ? "true" : "false");
-    form.set("file", body.file);
-    return requestForm<ProjectFileActionResult>(`/projects/${encodeURIComponent(projectId)}/files/upload`, form);
+    return fileToBase64(body.file).then((contentBase64) =>
+      request<ProjectFileActionResult>(`/projects/${encodeURIComponent(projectId)}/files/upload`, {
+        method: "POST",
+        body: JSON.stringify({
+          path: body.path,
+          filename: body.file.name || "upload.bin",
+          content_base64: contentBase64,
+          create_dirs: body.create_dirs ?? true,
+        }),
+      }),
+    );
   },
   projectFileAction: (
     projectId: string,

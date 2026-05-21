@@ -40,12 +40,14 @@ import Editor from "@monaco-editor/react";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../../api";
+import { ApiError, api } from "../../api";
 import type { Project, ProjectFileContent, ProjectFileEntry, Server } from "../../types";
 import { formatBytes } from "../../shared/format";
 import { runnerCapabilityBlockedReason, runnerCapabilityPillLabel } from "../../shared/runnerCapabilities";
 import { CapabilityPill, EmptyState, ErrorState, InlineNotice, LoadingState } from "../../shared/ui";
 import { errorNotice } from "../../shared/notices";
+
+const maxUploadBytes = 5 * 1024 * 1024;
 
 type FileDialogState =
   | { action: "create_file" | "create_dir"; path: string }
@@ -202,6 +204,10 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
 
   const uploadFile = (file: File | undefined) => {
     if (!file || !canUpload || uploadMutation.isPending) {
+      return;
+    }
+    if (file.size > maxUploadBytes) {
+      setUploadError(new ApiError(413, `File is too large. Upload files up to ${formatBytes(maxUploadBytes)}.`, "validation_error"));
       return;
     }
     setUploadError(null);

@@ -577,11 +577,13 @@ Project file write request:
 
 Project file upload request:
 
-```http
-POST /api/v1/projects/proj_123/files/upload
-Content-Type: multipart/form-data
-
-path=docs&create_dirs=true&file=@diagram.png
+```json
+{
+  "path": "docs",
+  "filename": "diagram.png",
+  "content_base64": "iVBORw0KGgo=",
+  "create_dirs": true
+}
 ```
 
 Project file action request:
@@ -599,7 +601,8 @@ Rules:
 - File content endpoints require `project_file_io`.
 - File upload requires `project_file_upload`, writes the selected browser file
   into `path` under the project workdir, preserves binary bytes, and currently
-  rejects uploads above 10 MiB.
+  rejects uploads above 5 MiB. The endpoint also accepts the older multipart
+  form shape for compatibility.
 - `action` may be `create`, `rename`, or `delete`; `create` also accepts
   `is_dir`.
 - The runner resolves all paths inside `project.workdir` and rejects paths that

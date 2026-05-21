@@ -5,12 +5,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
+
+var testUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
 
 func TestScanJSONLPreservesRawAndExtractsFields(t *testing.T) {
 	input := strings.NewReader(`{"type":"message","text":"hello","session_id":"sess_123","unknown":{"kept":true}}` + "\n")
@@ -490,6 +498,101 @@ func TestSelfUpdateCommandIncludesRunnerIdentity(t *testing.T) {
 	}
 	if os.PathSeparator != '\\' && !strings.Contains(joined, "/etc/codex-task-workbench-runner.env") {
 		t.Fatalf("self update command missing runner env file fallback: %s", joined)
+	}
+}
+
+func TestRunnerShutdownMessageStopsReconnect(t *testing.T) {
+	shutdownCalled := make(chan struct{}, 1)
+	registered := make(chan struct{}, 1)
+	accepted := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := testUpgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		var env Envelope
+		if err := conn.ReadJSON(&env); err != nil {
+			t.Errorf("read register: %v", err)
+			return
+		}
+		if env.Type != "runner.register" {
+			t.Errorf("first message = %q, want runner.register", env.Type)
+			return
+		}
+		registered <- struct{}{}
+		if err := conn.WriteJSON(Envelope{
+			Type:      "runner.shutdown",
+			MessageID: "msg_shutdown",
+			SentAt:    time.Now().UTC(),
+			Payload:   json.RawMessage(`{"reason":"server_deleted"}`),
+		}); err != nil {
+			t.Errorf("write shutdown: %v", err)
+			return
+		}
+		if err := conn.ReadJSON(&env); err != nil {
+			t.Errorf("read shutdown response: %v", err)
+			return
+		}
+		if env.Type != "runner.shutdown.response" || env.MessageID != "msg_shutdown" {
+			t.Errorf("shutdown response envelope = %s/%s", env.Type, env.MessageID)
+			return
+		}
+		var payload RunnerControlResult
+		if err := json.Unmarshal(env.Payload, &payload); err != nil {
+			t.Errorf("decode shutdown response: %v", err)
+			return
+		}
+		if !payload.Accepted {
+			t.Errorf("shutdown accepted = false: %#v", payload)
+			return
+		}
+		accepted <- struct{}{}
+	}))
+	defer server.Close()
+
+	agent := New(Config{
+		ControlURL:        strings.Replace(server.URL, "http://", "ws://", 1),
+		RunnerID:          "runner_desktop",
+		Hostname:          "desktop",
+		HeartbeatInterval: time.Hour,
+	}, nil)
+	agent.SetShutdownFunc(func(context.Context) error {
+		shutdownCalled <- struct{}{}
+		return nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- agent.Run(ctx)
+	}()
+
+	select {
+	case <-registered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runner did not register")
+	}
+	select {
+	case <-accepted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runner did not accept shutdown")
+	}
+	select {
+	case <-shutdownCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("shutdown function was not called")
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("agent run error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("runner did not stop after shutdown")
 	}
 }
 

@@ -103,7 +103,8 @@ can be added later without changing the top-level shape.
     "project_file_io": true,
     "project_file_upload": true,
     "project_terminal": true,
-    "project_command": true
+    "project_command": true,
+    "shutdown": true
   },
   "last_heartbeat_at": "2026-05-11T08:00:00Z",
   "created_at": "2026-05-11T08:00:00Z",
@@ -433,6 +434,9 @@ Rules:
 - It returns directories only; it does not read file contents.
 - Empty `path` asks the runner for useful roots such as home, current runner
   directory, drives on Windows, or `/` on Linux.
+- Deleting a server first asks the connected runner to shut down when it reports
+  the `shutdown` capability. The server record is still deleted when the runner
+  is offline, too old to support shutdown, or does not acknowledge the request.
 
 Runner update response:
 
@@ -1126,7 +1130,8 @@ Direction: runner to control plane.
       "project_command": true,
       "codex_options": true,
       "active_runs": true,
-      "self_update": true
+      "self_update": true,
+      "shutdown": true
     }
   }
 }
@@ -1351,6 +1356,42 @@ using its current control URL, runner id, Codex path, and runner token as a
 local updater secret for `Authorization` headers. Windows runners use
 `install.ps1`; Linux and macOS runners use `install.sh`. The current websocket
 can disconnect while the binary is replaced and restarted.
+
+### `runner.shutdown`
+
+Direction: control plane to runner.
+
+```json
+{
+  "type": "runner.shutdown",
+  "message_id": "msg_360",
+  "sent_at": "2026-05-11T08:04:30Z",
+  "payload": {
+    "reason": "server_deleted"
+  }
+}
+```
+
+### `runner.shutdown.response`
+
+Direction: runner to control plane. The response uses the same `message_id` as
+the request.
+
+```json
+{
+  "type": "runner.shutdown.response",
+  "message_id": "msg_360",
+  "sent_at": "2026-05-11T08:04:30Z",
+  "payload": {
+    "accepted": true,
+    "message": "Runner shutdown accepted. The websocket will disconnect."
+  }
+}
+```
+
+When accepted, the runner cancels local active work, disables the local service
+or startup entry when possible, writes a local disabled marker, and exits
+without reconnecting. Reinstalling the runner clears the disabled marker.
 
 ### `fs.list`
 

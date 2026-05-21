@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -30,6 +31,8 @@ type Config struct {
 	Env               []string
 }
 
+type ShutdownFunc func(context.Context) error
+
 type Envelope struct {
 	Type      string          `json:"type"`
 	MessageID string          `json:"message_id"`
@@ -38,11 +41,13 @@ type Envelope struct {
 }
 
 type Agent struct {
-	cfg    Config
-	logger *slog.Logger
-	conn   *websocket.Conn
-	mu     sync.Mutex
-	active map[string]context.CancelFunc
+	cfg      Config
+	logger   *slog.Logger
+	conn     *websocket.Conn
+	mu       sync.Mutex
+	active   map[string]context.CancelFunc
+	shutdown ShutdownFunc
+	stopping bool
 }
 
 var errRunnerNotConnected = errors.New("runner websocket is not connected")
@@ -63,14 +68,27 @@ func New(cfg Config, logger *slog.Logger) *Agent {
 	if cfg.CompactTimeout == 0 {
 		cfg.CompactTimeout = 5 * time.Minute
 	}
-	return &Agent{cfg: cfg, logger: logger, active: map[string]context.CancelFunc{}}
+	return &Agent{cfg: cfg, logger: logger, active: map[string]context.CancelFunc{}, shutdown: defaultShutdown}
+}
+
+func (a *Agent) SetShutdownFunc(fn ShutdownFunc) {
+	if fn == nil {
+		fn = defaultShutdown
+	}
+	a.mu.Lock()
+	a.shutdown = fn
+	a.mu.Unlock()
 }
 
 func (a *Agent) Run(ctx context.Context) error {
+	if runnerDisabled() {
+		a.logger.Info("runner is disabled; reinstall to reconnect")
+		return nil
+	}
 	retryDelay := time.Second
 	for {
 		connected, err := a.runOnce(ctx)
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || a.shouldStop() {
 			return nil
 		}
 		if connected {
@@ -156,6 +174,10 @@ func (a *Agent) runOnce(ctx context.Context) (bool, error) {
 			_ = a.send("run.cancel_ack", map[string]any{"run_id": payload.RunID, "accepted": accepted})
 		case "runner.update":
 			_ = a.sendResponse("runner.update.response", env.MessageID, a.startSelfUpdate(ctx))
+		case "runner.shutdown":
+			result, finish := a.prepareShutdown(ctx)
+			_ = a.sendResponse("runner.shutdown.response", env.MessageID, result)
+			go finish()
 		case "fs.list":
 			var payload struct {
 				Path string `json:"path"`
@@ -328,6 +350,28 @@ func (a *Agent) clearConn(conn *websocket.Conn) {
 		a.conn = nil
 	}
 	a.mu.Unlock()
+}
+
+func (a *Agent) closeConn() {
+	a.mu.Lock()
+	conn := a.conn
+	a.mu.Unlock()
+	if conn != nil {
+		_ = conn.Close()
+	}
+}
+
+func (a *Agent) requestStop() {
+	a.mu.Lock()
+	a.stopping = true
+	a.mu.Unlock()
+}
+
+func (a *Agent) shouldStop() bool {
+	a.mu.Lock()
+	stopping := a.stopping
+	a.mu.Unlock()
+	return stopping
 }
 
 func (a *Agent) normalizeAssignment(assign *Assignment) {
@@ -529,6 +573,18 @@ func (a *Agent) cancel(runID string) bool {
 	return true
 }
 
+func (a *Agent) cancelAll() {
+	a.mu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(a.active))
+	for _, cancel := range a.active {
+		cancels = append(cancels, cancel)
+	}
+	a.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+}
+
 func (a *Agent) register() error {
 	return a.send("runner.register", map[string]any{
 		"runner_id":      a.cfg.RunnerID,
@@ -548,22 +604,47 @@ func (a *Agent) register() error {
 			"codex_options":       true,
 			"active_runs":         true,
 			"self_update":         true,
+			"shutdown":            true,
 		},
 	})
 }
 
-func (a *Agent) startSelfUpdate(ctx context.Context) RunnerUpdateResult {
+func (a *Agent) startSelfUpdate(ctx context.Context) RunnerControlResult {
 	command, args, err := a.selfUpdateCommand()
 	if err != nil {
 		msg := err.Error()
-		return RunnerUpdateResult{Accepted: false, Message: "Runner update is not available on this host.", Error: &msg}
+		return RunnerControlResult{Accepted: false, Message: "Runner update is not available on this host.", Error: &msg}
 	}
 	go func() {
 		if err := a.runSelfUpdate(ctx, command, args); err != nil {
 			a.logger.Warn("runner self-update failed", "error", err)
 		}
 	}()
-	return RunnerUpdateResult{Accepted: true, Message: "Runner update started. The websocket may disconnect while the runner restarts."}
+	return RunnerControlResult{Accepted: true, Message: "Runner update started. The websocket may disconnect while the runner restarts."}
+}
+
+func (a *Agent) prepareShutdown(ctx context.Context) (RunnerControlResult, func()) {
+	a.cancelAll()
+	a.requestStop()
+	shutdown := a.shutdownFunc()
+	finish := func() {
+		shutdownCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		if err := shutdown(shutdownCtx); err != nil {
+			a.logger.Warn("runner shutdown cleanup failed", "error", err)
+		}
+		a.closeConn()
+	}
+	return RunnerControlResult{Accepted: true, Message: "Runner shutdown accepted. The websocket will disconnect."}, finish
+}
+
+func (a *Agent) shutdownFunc() ShutdownFunc {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.shutdown == nil {
+		return defaultShutdown
+	}
+	return a.shutdown
 }
 
 func (a *Agent) selfUpdateCommand() (string, []string, error) {
@@ -625,6 +706,76 @@ func runnerInstallShellCommand(installURL string) string {
 	return `sleep 2; if [ -z "${RUNNER_UPDATE_TOKEN:-}" ] && [ -r /etc/codex-task-workbench-runner.env ]; then RUNNER_UPDATE_TOKEN="$(sed -n 's/^RUNNER_TOKEN=//p' /etc/codex-task-workbench-runner.env | tail -n 1)"; fi; if [ -n "${RUNNER_UPDATE_TOKEN:-}" ]; then curl -fsSL -H "Authorization: Bearer ${RUNNER_UPDATE_TOKEN}" ` + quotedURL + ` | sh; else curl -fsSL ` + quotedURL + ` | sh; fi`
 }
 
+func defaultShutdown(ctx context.Context) error {
+	markerErr := writeDisabledMarker()
+	var cmdErr error
+	switch runtime.GOOS {
+	case "windows":
+		script := `$task = "CodexTaskWorkbenchRunner"; schtasks.exe /End /TN $task 2>$null | Out-Null; schtasks.exe /Delete /TN $task /F 2>$null | Out-Null; $startup = [Environment]::GetFolderPath("Startup"); if ($startup) { Remove-Item -LiteralPath (Join-Path $startup "CodexTaskWorkbenchRunner.cmd") -Force -ErrorAction SilentlyContinue }`
+		cmdErr = runShutdownCommand(ctx, windowsPowerShellExecutable(), []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}, nil)
+	case "linux":
+		script := `if command -v systemctl >/dev/null 2>&1; then systemctl disable --now codex-task-workbench-runner.service >/dev/null 2>&1 || true; systemctl reset-failed codex-task-workbench-runner.service >/dev/null 2>&1 || true; fi; if [ -f /opt/codex-task-workbench/runner/runner.pid ]; then old_pid="$(cat /opt/codex-task-workbench/runner/runner.pid 2>/dev/null || true)"; case "$old_pid" in ''|*[!0-9]*) old_pid="" ;; esac; if [ -n "$old_pid" ] && [ "$old_pid" != "$$" ]; then kill "$old_pid" >/dev/null 2>&1 || true; fi; rm -f /opt/codex-task-workbench/runner/runner.pid; fi`
+		cmdErr = runShutdownCommand(ctx, "/bin/sh", []string{"-lc", script}, nil)
+	case "darwin":
+		script := `launchctl bootout system /Library/LaunchDaemons/com.codex-task-workbench.runner.plist >/dev/null 2>&1 || true; launchctl disable system/com.codex-task-workbench.runner >/dev/null 2>&1 || true`
+		cmdErr = runShutdownCommand(ctx, "/bin/sh", []string{"-lc", script}, nil)
+	}
+	if cmdErr != nil {
+		return cmdErr
+	}
+	return markerErr
+}
+
+func runShutdownCommand(ctx context.Context, command string, args []string, env []string) error {
+	cmd := exec.CommandContext(ctx, command, args...)
+	if env != nil {
+		cmd.Env = env
+	}
+	return cmd.Run()
+}
+
+func runnerDisabled() bool {
+	for _, path := range runnerDisableMarkerPaths() {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func writeDisabledMarker() error {
+	var lastErr error
+	for _, path := range runnerDisableMarkerPaths() {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			lastErr = err
+			continue
+		}
+		if err := os.WriteFile(path, []byte("disabled by control plane\n"), 0o600); err != nil {
+			lastErr = err
+			continue
+		}
+		return nil
+	}
+	return lastErr
+}
+
+func runnerDisableMarkerPaths() []string {
+	seen := map[string]bool{}
+	var paths []string
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" || seen[path] {
+			return
+		}
+		seen[path] = true
+		paths = append(paths, path)
+	}
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		add(filepath.Join(filepath.Dir(exe), "runner.disabled"))
+	}
+	return paths
+}
+
 func (a *Agent) runSelfUpdate(ctx context.Context, command string, args []string) error {
 	updateCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
@@ -647,6 +798,9 @@ func (a *Agent) heartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if a.shouldStop() {
+				return
+			}
 			_ = a.send("runner.heartbeat", map[string]any{
 				"runner_id":      a.cfg.RunnerID,
 				"active_run_ids": a.activeRuns(),

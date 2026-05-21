@@ -400,11 +400,19 @@ type RunCancelAckPayload struct {
 
 type RunnerUpdateRequestPayload struct{}
 
-type RunnerUpdateResponsePayload struct {
+type RunnerControlResponsePayload struct {
 	Accepted bool    `json:"accepted"`
 	Message  string  `json:"message"`
 	Error    *string `json:"error,omitempty"`
 }
+
+type RunnerUpdateResponsePayload = RunnerControlResponsePayload
+
+type RunnerShutdownRequestPayload struct {
+	Reason string `json:"reason,omitempty"`
+}
+
+type RunnerShutdownResponsePayload = RunnerControlResponsePayload
 
 type RunnerUpdateServerResult struct {
 	ServerID        string  `json:"server_id"`

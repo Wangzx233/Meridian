@@ -1,6 +1,7 @@
 package control
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -57,7 +58,13 @@ func (a *API) handleServerByID(w http.ResponseWriter, r *http.Request) {
 		a.hydrateServer(&item)
 		a.respond(w, http.StatusOK, item, err)
 	case http.MethodDelete:
-		err := a.store.DeleteServer(r.Context(), id)
+		server, err := a.store.GetServer(r.Context(), id)
+		if err != nil {
+			a.respond(w, http.StatusOK, nil, err)
+			return
+		}
+		a.requestRunnerShutdownBeforeDelete(r.Context(), server)
+		err = a.store.DeleteServer(r.Context(), id)
 		if err != nil {
 			a.respond(w, http.StatusOK, nil, err)
 			return
@@ -65,6 +72,34 @@ func (a *API) handleServerByID(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		methodNotAllowed(w)
+	}
+}
+
+func (a *API) requestRunnerShutdownBeforeDelete(ctx context.Context, server Server) {
+	if strings.TrimSpace(server.RunnerID) == "" || !a.runners.Connected(server.RunnerID) {
+		return
+	}
+	if !a.runners.Supports(server.RunnerID, "shutdown") {
+		a.logger.Info("connected runner does not support shutdown before server delete", "runner_id", server.RunnerID)
+		return
+	}
+	env, err := a.runners.Request(server.RunnerID, "runner.shutdown", RunnerShutdownRequestPayload{
+		Reason: "server_deleted",
+	}, 5*time.Second)
+	if err != nil {
+		a.logger.Warn("runner shutdown request before server delete failed", "runner_id", server.RunnerID, "error", err)
+		return
+	}
+	var payload RunnerShutdownResponsePayload
+	if !decodeEnvelopePayload(env.Payload, &payload, a, "runner.shutdown.response") {
+		return
+	}
+	if !payload.Accepted {
+		if payload.Error != nil && strings.TrimSpace(*payload.Error) != "" {
+			a.logger.Warn("runner rejected shutdown before server delete", "runner_id", server.RunnerID, "error", *payload.Error)
+			return
+		}
+		a.logger.Warn("runner rejected shutdown before server delete", "runner_id", server.RunnerID, "message", payload.Message)
 	}
 }
 

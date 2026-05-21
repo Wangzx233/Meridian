@@ -124,6 +124,11 @@ The web UI's top-right runner install menu uses these artifacts through the
 backend install endpoints. Prefer that UI flow over copying endpoint URLs from
 documentation.
 
+When a server is deleted from the web UI, current runners that report the
+`shutdown` capability are asked to disable their local service or startup entry
+and exit. Reinstalling the runner from the install menu clears that local
+disabled marker.
+
 ## Runner User And Codex Config
 
 Codex CLI stores its login and settings under the OS user's home directory, for

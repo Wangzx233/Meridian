@@ -108,6 +108,7 @@ $InstallDir = Join-Path $InstallRoot "CodexTaskWorkbench\runner"
 $RunnerExe = Join-Path $InstallDir "codex-task-workbench-runner.exe"
 $Wrapper = Join-Path $InstallDir "run-runner.cmd"
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+Remove-Item -LiteralPath (Join-Path $InstallDir "runner.disabled") -Force -ErrorAction SilentlyContinue
 if (-not [Environment]::Is64BitOperatingSystem) { throw "Only windows-amd64 runner artifacts are supported by this bootstrap script." }
 $RunnerToken = %q
 $RunnerHeaders = @{"Cache-Control"="no-cache"}
@@ -319,6 +320,7 @@ export LOGNAME=$RUNNER_USER"
 WorkingDirectory=$RUNNER_HOME"
 fi
 $SUDO mkdir -p "$INSTALL_DIR"
+$SUDO rm -f "$INSTALL_DIR/runner.disabled"
 echo "Downloading runner from $CONTROL_URL/api/v1/runner/artifacts/$ARTIFACT"
 RUNNER_TMP="$INSTALL_DIR/codex-task-workbench-runner.$$.download"
 cleanup_runner_tmp() {
@@ -407,7 +409,7 @@ Wants=network-online.target
 EnvironmentFile=$ENV_FILE
 $RUNNER_SERVICE_USER_LINES
 ExecStart=$RUNNER_BIN
-Restart=always
+Restart=on-failure
 RestartSec=5
 
 [Install]

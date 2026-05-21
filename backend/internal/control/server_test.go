@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -36,6 +38,8 @@ func TestRunnerInstallShellResolvesCodexPathForSystemd(t *testing.T) {
 		`EnvironmentFile=$ENV_FILE`,
 		`User=$RUNNER_USER`,
 		`WorkingDirectory=$RUNNER_HOME`,
+		`Restart=on-failure`,
+		`$SUDO rm -f "$INSTALL_DIR/runner.disabled"`,
 		`runuser -u "$RUNNER_USER" -- sh -c "$START_CMD"`,
 		`linux_systemd_available()`,
 		`[ -d /run/systemd/system ] || return 1`,
@@ -90,6 +94,128 @@ func TestDecodePatchServerInputCanClearAlias(t *testing.T) {
 	if *in.Alias != "" {
 		t.Fatalf("alias = %q, want empty string", *in.Alias)
 	}
+}
+
+func TestDeleteServerRequestsRunnerShutdown(t *testing.T) {
+	dsn := testDatabaseURL(t)
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect database: %v", err)
+	}
+	defer pool.Close()
+	resetIntegrationDB(t, pool)
+
+	store := NewStore(pool)
+	server, err := store.CreateServer(ctx, CreateServerInput{Name: "desktop", RunnerID: "runner_desktop"})
+	if err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+	api := NewAPI(store, nil, AuthConfig{})
+	httpServer := httptest.NewServer(api.Handler())
+	defer httpServer.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/v1/runner/ws"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial runner websocket: %v", err)
+	}
+	defer conn.Close()
+	if err := conn.WriteJSON(RunnerEnvelope{
+		Type:      "runner.register",
+		MessageID: "msg_register",
+		SentAt:    time.Now().UTC(),
+		Payload: mustJSON(t, RunnerRegisterPayload{
+			RunnerID: "runner_desktop",
+			Hostname: "desktop",
+			Version:  "test",
+			Capabilities: map[string]any{
+				"shutdown": true,
+			},
+		}),
+	}); err != nil {
+		t.Fatalf("write register: %v", err)
+	}
+	waitForRunnerConnected(t, api, "runner_desktop")
+
+	shutdownSeen := make(chan RunnerEnvelope, 1)
+	go func() {
+		var env RunnerEnvelope
+		if err := conn.ReadJSON(&env); err == nil {
+			shutdownSeen <- env
+		}
+	}()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/servers/"+server.ID, nil)
+	deleteDone := make(chan struct{})
+	go func() {
+		defer close(deleteDone)
+		api.handleServerByID(rec, req)
+	}()
+
+	var shutdownEnv RunnerEnvelope
+	select {
+	case env := <-shutdownSeen:
+		shutdownEnv = env
+		if env.Type != "runner.shutdown" {
+			t.Fatalf("runner message = %q, want runner.shutdown", env.Type)
+		}
+		var payload RunnerShutdownRequestPayload
+		if err := json.Unmarshal(env.Payload, &payload); err != nil {
+			t.Fatalf("decode shutdown payload: %v", err)
+		}
+		if payload.Reason != "server_deleted" {
+			t.Fatalf("shutdown reason = %q, want server_deleted", payload.Reason)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("runner shutdown request was not sent")
+	}
+
+	if err := conn.WriteJSON(RunnerEnvelope{
+		Type:      "runner.shutdown.response",
+		MessageID: shutdownEnv.MessageID,
+		SentAt:    time.Now().UTC(),
+		Payload: mustJSON(t, RunnerShutdownResponsePayload{
+			Accepted: true,
+			Message:  "ok",
+		}),
+	}); err != nil {
+		t.Fatalf("write shutdown response: %v", err)
+	}
+	select {
+	case <-deleteDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("delete did not finish after shutdown response")
+	}
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if _, err := store.GetServer(ctx, server.ID); err == nil {
+		t.Fatalf("server still exists after delete")
+	}
+}
+
+func waitForRunnerConnected(t *testing.T, api *API, runnerID string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if api.runners.Connected(runnerID) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("runner %s did not connect", runnerID)
+}
+
+func mustJSON(t *testing.T, value any) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal json: %v", err)
+	}
+	return raw
 }
 
 func TestMarkDoneDoesNotCreatePendingNotice(t *testing.T) {

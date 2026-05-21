@@ -356,6 +356,7 @@ The protocol should support:
 - Run assignment.
 - Event streaming from runner to control plane.
 - Cancellation request from control plane to runner.
+- Shutdown request from control plane to runner when a server is deleted.
 - Final status report.
 
 For MVP, a simple WebSocket connection is acceptable.
@@ -369,6 +370,7 @@ run.assign
 run.event
 run.completed
 run.cancel
+runner.shutdown
 ```
 
 ## 8. Codex CLI Integration

@@ -46,7 +46,7 @@ type RunResult struct {
 	CodexSessionID *string
 }
 
-type RunnerUpdateResult struct {
+type RunnerControlResult struct {
 	Accepted bool    `json:"accepted"`
 	Message  string  `json:"message"`
 	Error    *string `json:"error,omitempty"`

@@ -46,12 +46,14 @@ export class ApiError extends Error {
 export const apiBaseUrl = API_BASE;
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const hasBody = init.body !== undefined && init.body !== null;
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       Accept: "application/json",
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(hasBody && !isFormData ? { "Content-Type": "application/json" } : {}),
       ...init.headers,
     },
   });
@@ -95,6 +97,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   return body as T;
+}
+
+async function requestForm<T>(path: string, body: FormData): Promise<T> {
+  return request<T>(path, {
+    method: "POST",
+    body,
+  });
 }
 
 function normalizeList<T>(response: ListResponse<T>): ListResponse<T> {
@@ -156,6 +165,13 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+  uploadProjectFile: (projectId: string, body: { path: string; file: File; create_dirs?: boolean }) => {
+    const form = new FormData();
+    form.set("path", body.path);
+    form.set("create_dirs", body.create_dirs ? "true" : "false");
+    form.set("file", body.file);
+    return requestForm<ProjectFileActionResult>(`/projects/${encodeURIComponent(projectId)}/files/upload`, form);
+  },
   projectFileAction: (
     projectId: string,
     body: { action: "create" | "rename" | "delete"; path: string; target_path?: string; is_dir?: boolean },

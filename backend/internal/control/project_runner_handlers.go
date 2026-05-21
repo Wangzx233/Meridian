@@ -2,15 +2,20 @@ package control
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"path"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+const maxProjectFileUploadBytes int64 = 10 * 1024 * 1024
 
 func (a *API) handleProjectFiles(w http.ResponseWriter, r *http.Request, projectID string) {
 	if r.Method != http.MethodGet {
@@ -50,11 +55,87 @@ func (a *API) handleProjectFileRoutes(w http.ResponseWriter, r *http.Request, pr
 	switch parts[0] {
 	case "content":
 		a.handleProjectFileContent(w, r, projectID)
+	case "upload":
+		a.handleProjectFileUpload(w, r, projectID)
 	case "actions":
 		a.handleProjectFileAction(w, r, projectID)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found.", nil)
 	}
+}
+
+func (a *API) handleProjectFileUpload(w http.ResponseWriter, r *http.Request, projectID string) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxProjectFileUploadBytes+1024*1024)
+	if err := r.ParseMultipartForm(maxProjectFileUploadBytes); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_error", "Invalid multipart upload.", nil)
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	targetDir := strings.TrimSpace(r.FormValue("path"))
+	createDirs := strings.EqualFold(strings.TrimSpace(r.FormValue("create_dirs")), "true")
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation_error", "File is required.", nil)
+		return
+	}
+	defer file.Close()
+	if header == nil || strings.TrimSpace(header.Filename) == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "Filename is required.", nil)
+		return
+	}
+	if header.Size > maxProjectFileUploadBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "validation_error", "File is too large.", nil)
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxProjectFileUploadBytes+1))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation_error", "Unable to read uploaded file.", nil)
+		return
+	}
+	if int64(len(data)) > maxProjectFileUploadBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "validation_error", "File is too large.", nil)
+		return
+	}
+	filename := path.Base(path.Clean(strings.ReplaceAll(header.Filename, "\\", "/")))
+	if filename == "." || filename == "/" || strings.TrimSpace(filename) == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "Filename is required.", nil)
+		return
+	}
+	targetPath := filename
+	if targetDir != "" && targetDir != "." {
+		targetPath = strings.Trim(strings.ReplaceAll(targetDir, "\\", "/"), "/") + "/" + filename
+	}
+
+	project, server, ok := a.projectAndServerForRunnerRequest(w, r, projectID, "project_file_upload")
+	if !ok {
+		return
+	}
+	env, err := a.runners.Request(server.RunnerID, "project.file.upload", ProjectFileUploadRequestPayload{
+		Workdir:       project.Workdir,
+		Path:          targetPath,
+		ContentBase64: base64.StdEncoding.EncodeToString(data),
+		CreateDirs:    createDirs,
+	}, 30*time.Second)
+	if err != nil {
+		a.respondRunnerRequestError(w, server.RunnerID, "project file upload request", err)
+		return
+	}
+	var result ProjectFileActionResult
+	if !decodeEnvelopePayload(env.Payload, &result, a, "project.file.upload.response") {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Invalid runner response.", nil)
+		return
+	}
+	if result.Error != nil {
+		writeError(w, http.StatusBadRequest, "validation_error", *result.Error, nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (a *API) handleProjectFileContent(w http.ResponseWriter, r *http.Request, projectID string) {

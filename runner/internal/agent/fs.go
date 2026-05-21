@@ -231,6 +231,10 @@ func readProjectFile(root, path string, maxBytes int64) ProjectFileContent {
 }
 
 func writeProjectFile(root, path, content string, createDirs bool) ProjectFileActionResult {
+	return writeProjectFileBytes(root, path, []byte(content), createDirs)
+}
+
+func writeProjectFileBytes(root, path string, content []byte, createDirs bool) ProjectFileActionResult {
 	cleanRoot, target, relPath, err := resolveProjectWritablePath(root, path)
 	if err != nil {
 		msg := err.Error()
@@ -246,7 +250,7 @@ func writeProjectFile(root, path, content string, createDirs bool) ProjectFileAc
 			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, Error: &msg}
 		}
 	}
-	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(target, content, 0o644); err != nil {
 		msg := err.Error()
 		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, Error: &msg}
 	}

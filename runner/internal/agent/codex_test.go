@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -377,6 +378,31 @@ func TestReadAndWriteProjectFile(t *testing.T) {
 	outside := writeProjectFile(root, "../outside.txt", "nope", true)
 	if outside.Error == nil {
 		t.Fatalf("expected write outside root to fail")
+	}
+}
+
+func TestWriteProjectFileBytesPreservesBinaryContent(t *testing.T) {
+	root := t.TempDir()
+	content := []byte{0x00, 0xff, 0x41, 0x0a, 0x80}
+	write := writeProjectFileBytes(root, "assets/blob.bin", content, true)
+	if write.Error != nil {
+		t.Fatalf("write binary error = %v", *write.Error)
+	}
+	if write.Size != int64(len(content)) {
+		t.Fatalf("write size = %d, want %d", write.Size, len(content))
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "assets", "blob.bin"))
+	if err != nil {
+		t.Fatalf("read written binary: %v", err)
+	}
+	if !bytes.Equal(data, content) {
+		t.Fatalf("binary content = %#v, want %#v", data, content)
+	}
+
+	outside := writeProjectFileBytes(root, "../outside.bin", content, true)
+	if outside.Error == nil {
+		t.Fatalf("expected binary write outside root to fail")
 	}
 }
 

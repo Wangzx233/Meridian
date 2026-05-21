@@ -101,6 +101,7 @@ can be added later without changing the top-level shape.
     "fs_list": true,
     "project_files": true,
     "project_file_io": true,
+    "project_file_upload": true,
     "project_terminal": true,
     "project_command": true
   },
@@ -122,8 +123,8 @@ backend deploys do not immediately mark the server offline.
 websocket for `runner_id`. `runner_connection` describes that active process and
 is omitted when no runner is connected. File browsing, file editing, and PTY
 terminal sessions also require the corresponding values in
-`runner_capabilities`; a connected runner without `project_file_io` or
-`project_terminal` is an old runner binary.
+`runner_capabilities`; a connected runner without `project_file_io`,
+`project_file_upload`, or `project_terminal` is an old runner binary.
 
 ### Project
 
@@ -496,6 +497,7 @@ DELETE /api/v1/projects/{project_id}
 GET  /api/v1/projects/{project_id}/files?path={relative_project_path}
 GET  /api/v1/projects/{project_id}/files/content?path={relative_project_path}
 PUT  /api/v1/projects/{project_id}/files/content
+POST /api/v1/projects/{project_id}/files/upload
 POST /api/v1/projects/{project_id}/files/actions
 WS   /api/v1/projects/{project_id}/terminal
 POST /api/v1/projects/{project_id}/command
@@ -567,6 +569,15 @@ Project file write request:
 }
 ```
 
+Project file upload request:
+
+```http
+POST /api/v1/projects/proj_123/files/upload
+Content-Type: multipart/form-data
+
+path=docs&create_dirs=true&file=@diagram.png
+```
+
 Project file action request:
 
 ```json
@@ -580,6 +591,9 @@ Project file action request:
 Rules:
 
 - File content endpoints require `project_file_io`.
+- File upload requires `project_file_upload`, writes the selected browser file
+  into `path` under the project workdir, preserves binary bytes, and currently
+  rejects uploads above 10 MiB.
 - `action` may be `create`, `rename`, or `delete`; `create` also accepts
   `is_dir`.
 - The runner resolves all paths inside `project.workdir` and rejects paths that
@@ -1107,6 +1121,7 @@ Direction: runner to control plane.
       "fs_list": true,
       "project_files": true,
       "project_file_io": true,
+      "project_file_upload": true,
       "project_terminal": true,
       "project_command": true,
       "codex_options": true,
@@ -1507,6 +1522,43 @@ the request.
 }
 ```
 
+### `project.file.upload`
+
+Direction: control plane to runner.
+
+```json
+{
+  "type": "project.file.upload",
+  "message_id": "msg_525",
+  "sent_at": "2026-05-11T08:04:23Z",
+  "payload": {
+    "workdir": "D:\\go\\workplace",
+    "path": "assets/logo.png",
+    "content_base64": "iVBORw0KGgo=",
+    "create_dirs": true
+  }
+}
+```
+
+### `project.file.upload.response`
+
+Direction: runner to control plane. The response uses the same `message_id` as
+the request.
+
+```json
+{
+  "type": "project.file.upload.response",
+  "message_id": "msg_525",
+  "sent_at": "2026-05-11T08:04:23Z",
+  "payload": {
+    "root": "D:\\go\\workplace",
+    "path": "assets/logo.png",
+    "is_dir": false,
+    "size": 8
+  }
+}
+```
+
 ### `project.file.action`
 
 Direction: control plane to runner.
@@ -1545,9 +1597,11 @@ the request.
 
 Rules:
 
-- `project.file.write.response` and `project.file.action.response` return the
-  affected project-root-relative path and metadata.
-- The runner must reject writes, renames, and deletes that escape `workdir`.
+- `project.file.write.response`, `project.file.upload.response`, and
+  `project.file.action.response` return the affected project-root-relative path
+  and metadata.
+- The runner must reject writes, uploads, renames, and deletes that escape
+  `workdir`.
 - The runner must not delete the project root.
 
 ### `project.terminal.open`

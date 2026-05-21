@@ -100,7 +100,7 @@ func (a *API) handleRunnerWS(w http.ResponseWriter, r *http.Request) {
 				a.runners.Register(payload.RunnerID, conn, RunnerInfo{ConnectedAt: time.Now().UTC()}, nil)
 			}
 			go a.publishAndMaybeAssign(context.Background(), payload.RunnerID)
-		case "runner.update.response", "fs.list.response", "project.files.response", "project.file.read.response", "project.file.write.response", "project.file.action.response", "project.command.response", "project.terminal.open.response":
+		case "runner.update.response", "fs.list.response", "project.files.response", "project.file.read.response", "project.file.write.response", "project.file.upload.response", "project.file.action.response", "project.command.response", "project.terminal.open.response":
 			if !a.runners.HandleResponse(runnerID, env) {
 				a.logger.Warn("unmatched runner response", "type", env.Type, "message_id", env.MessageID, "runner_id", runnerID)
 			}

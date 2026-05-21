@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -197,6 +198,24 @@ func (a *Agent) runOnce(ctx context.Context) (bool, error) {
 				continue
 			}
 			_ = a.sendResponse("project.file.write.response", env.MessageID, writeProjectFile(payload.Workdir, payload.Path, payload.Content, payload.CreateDirs))
+		case "project.file.upload":
+			var payload struct {
+				Workdir       string `json:"workdir"`
+				Path          string `json:"path"`
+				ContentBase64 string `json:"content_base64"`
+				CreateDirs    bool   `json:"create_dirs"`
+			}
+			if err := json.Unmarshal(env.Payload, &payload); err != nil {
+				a.logger.Warn("invalid project.file.upload", "error", err)
+				continue
+			}
+			content, err := base64.StdEncoding.DecodeString(payload.ContentBase64)
+			if err != nil {
+				msg := "invalid base64 file content"
+				_ = a.sendResponse("project.file.upload.response", env.MessageID, ProjectFileActionResult{Path: payload.Path, Error: &msg})
+				continue
+			}
+			_ = a.sendResponse("project.file.upload.response", env.MessageID, writeProjectFileBytes(payload.Workdir, payload.Path, content, payload.CreateDirs))
 		case "project.file.action":
 			var payload struct {
 				Workdir    string `json:"workdir"`
@@ -518,16 +537,17 @@ func (a *Agent) register() error {
 		"codex_path":     a.cfg.CodexPath,
 		"active_run_ids": a.activeRuns(),
 		"capabilities": map[string]any{
-			"codex_exec":       true,
-			"cancel":           true,
-			"fs_list":          true,
-			"project_files":    true,
-			"project_file_io":  true,
-			"project_command":  true,
-			"project_terminal": true,
-			"codex_options":    true,
-			"active_runs":      true,
-			"self_update":      true,
+			"codex_exec":          true,
+			"cancel":              true,
+			"fs_list":             true,
+			"project_files":       true,
+			"project_file_io":     true,
+			"project_file_upload": true,
+			"project_command":     true,
+			"project_terminal":    true,
+			"codex_options":       true,
+			"active_runs":         true,
+			"self_update":         true,
 		},
 	})
 }

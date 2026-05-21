@@ -131,6 +131,13 @@ type ProjectFileWriteRequestPayload struct {
 	CreateDirs bool   `json:"create_dirs"`
 }
 
+type ProjectFileUploadRequestPayload struct {
+	Workdir       string `json:"workdir"`
+	Path          string `json:"path"`
+	ContentBase64 string `json:"content_base64"`
+	CreateDirs    bool   `json:"create_dirs"`
+}
+
 type ProjectFileActionRequestPayload struct {
 	Workdir    string `json:"workdir"`
 	Action     string `json:"action"`

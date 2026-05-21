@@ -10,6 +10,7 @@ import {
   Copy,
   Download,
   Edit3,
+  FileUp,
   FileText,
   FolderKanban,
   FolderOpen,
@@ -36,7 +37,7 @@ import {
   Zap,
 } from "lucide-react";
 import Editor from "@monaco-editor/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
@@ -69,9 +70,13 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
   const [dialog, setDialog] = useState<FileDialogState>(null);
   const [actionError, setActionError] = useState<unknown>(null);
   const [saveError, setSaveError] = useState<unknown>(null);
+  const [uploadError, setUploadError] = useState<unknown>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const canBrowse = Boolean(props.server?.runner_connected && props.server.runner_capabilities?.project_files === true);
   const canEdit = Boolean(props.server?.runner_connected && props.server.runner_capabilities?.project_file_io === true);
+  const canUpload = Boolean(props.server?.runner_connected && props.server.runner_capabilities?.project_file_upload === true);
   const blockedReason = runnerCapabilityBlockedReason(props.server, canBrowse ? "project_file_io" : "project_files", "file browsing");
+  const uploadBlockedReason = runnerCapabilityBlockedReason(props.server, "project_file_upload", "file upload");
   const filesQuery = useQuery({
     queryKey: ["project-files", props.project.id, path],
     queryFn: () => api.listProjectFiles(props.project.id, path),
@@ -93,6 +98,19 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
       void queryClient.invalidateQueries({ queryKey: ["project-file-content", props.project.id, selectedFilePath] });
     },
     onError: (error) => setSaveError(error),
+  });
+  const uploadMutation = useMutation({
+    mutationFn: (body: { path: string; file: File; create_dirs?: boolean }) => api.uploadProjectFile(props.project.id, body),
+    onSuccess: (result) => {
+      const parent = parentDirectory(result.path);
+      setUploadError(null);
+      setPath(parent);
+      setManualPath(parent);
+      void queryClient.invalidateQueries({ queryKey: ["project-files", props.project.id] });
+      void queryClient.invalidateQueries({ queryKey: ["project-files", props.project.id, parent] });
+      void queryClient.invalidateQueries({ queryKey: ["project-file-content", props.project.id, result.path] });
+    },
+    onError: (error) => setUploadError(error),
   });
   const actionMutation = useMutation({
     mutationFn: (body: { action: "create" | "rename" | "delete"; path: string; target_path?: string; is_dir?: boolean }) =>
@@ -129,6 +147,7 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
     setDirty(false);
     setActionError(null);
     setSaveError(null);
+    setUploadError(null);
   }, [props.project.id]);
 
   useEffect(() => {
@@ -139,6 +158,7 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
     setHandledOpenRequestId(request.id);
     setActionError(null);
     setSaveError(null);
+    setUploadError(null);
     if (request.isDir) {
       setPath(request.path);
       setManualPath(request.path);
@@ -180,6 +200,14 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
     saveMutation.mutate({ path: selectedFilePath, content: editorValue, create_dirs: true });
   };
 
+  const uploadFile = (file: File | undefined) => {
+    if (!file || !canUpload || uploadMutation.isPending) {
+      return;
+    }
+    setUploadError(null);
+    uploadMutation.mutate({ path, file, create_dirs: true });
+  };
+
   return (
     <section className="filesPanel" aria-label="Project files">
       <div className="toolHeader">
@@ -188,7 +216,10 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
           <p className="mono">{listing?.root ?? props.project.workdir}</p>
         </div>
         <div className="toolActions">
-          <CapabilityPill available={canBrowse && canEdit} label={canBrowse && canEdit ? "Files ready" : runnerCapabilityPillLabel(props.server)} />
+          <CapabilityPill
+            available={canBrowse && canEdit && canUpload}
+            label={canBrowse && canEdit && canUpload ? "Files ready" : runnerCapabilityPillLabel(props.server)}
+          />
             <button className="ghostButton compact" type="button" onClick={refreshFiles} disabled={!canBrowse || filesQuery.isFetching}>
               <RefreshCw size={14} />
               Refresh
@@ -197,6 +228,7 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
       </div>
 
       {!canBrowse || !canEdit ? <InlineNotice tone="danger">{blockedReason}</InlineNotice> : null}
+      {canBrowse && canEdit && !canUpload ? <InlineNotice tone="danger">{uploadBlockedReason}</InlineNotice> : null}
 
       <div className="fileToolbar">
         <button
@@ -218,8 +250,30 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
             <FolderOpen size={14} />
             New folder
           </button>
+          <input
+            ref={uploadInputRef}
+            className="srOnly"
+            type="file"
+            onChange={(event) => {
+              uploadFile(event.target.files?.[0]);
+              event.target.value = "";
+            }}
+            disabled={!canUpload}
+            aria-label="Upload file to current directory"
+          />
+          <button
+            className="ghostButton compact"
+            type="button"
+            onClick={() => uploadInputRef.current?.click()}
+            disabled={!canUpload || uploadMutation.isPending}
+          >
+            {uploadMutation.isPending ? <Loader2 className="spin" size={14} /> : <FileUp size={14} />}
+            Upload
+          </button>
         </div>
       </div>
+
+      {uploadError ? <InlineNotice tone="danger">{errorNotice(uploadError, "Unable to upload file.").message}</InlineNotice> : null}
 
       <div className="directoryPathJump">
         <input

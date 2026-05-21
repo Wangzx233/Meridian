@@ -129,6 +129,13 @@ When a server is deleted from the web UI, current runners that report the
 and exit. Reinstalling the runner from the install menu clears that local
 disabled marker.
 
+Current Linux and macOS runners self-update by downloading the platform runner
+artifact from the deployed backend, replacing their own executable, and `exec`ing
+the new process. This avoids requiring non-interactive `sudo` from Linux
+runners installed with the default `run_as=user` mode. The control plane only
+sends one-click updates to connected runners that report `self_update_exec`;
+older runners are skipped and need one reinstall from the install menu.
+
 ## Runner User And Codex Config
 
 Codex CLI stores its login and settings under the OS user's home directory, for

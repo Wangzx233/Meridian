@@ -83,6 +83,8 @@ Responsibilities:
 - Stream Codex JSONL/stdout/stderr events back.
 - Support cancellation.
 - Report final status.
+- Self-update from deployed runner artifacts when the registered capability is
+  available.
 
 The runner should be thin. It should not call OpenAI APIs directly in the first
 version.

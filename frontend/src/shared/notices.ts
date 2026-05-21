@@ -35,8 +35,9 @@ export function runnerUpdateNotice(response: RunnerUpdateAllResponse): Notice {
   if (response.failed > 0) {
     details.push(`${response.failed} failed`);
   }
+  const skippedReason = response.results.find((result) => result.status === "skipped" && result.message.trim());
   return {
     tone,
-    message: `Runner update requested: ${details.join(", ")}.`,
+    message: `Runner update requested: ${details.join(", ")}.${skippedReason ? ` ${skippedReason.message}` : ""}`,
   };
 }

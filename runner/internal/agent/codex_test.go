@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -469,6 +470,9 @@ func TestWindowsPowerShellExecutableIsAbsoluteOnWindows(t *testing.T) {
 }
 
 func TestSelfUpdateCommandIncludesRunnerIdentity(t *testing.T) {
+	if os.PathSeparator != '\\' {
+		t.Skip("install-script self update is windows only")
+	}
 	agent := New(Config{
 		ControlURL:  "http://control.local",
 		RunnerID:    "runner_desktop",
@@ -496,8 +500,55 @@ func TestSelfUpdateCommandIncludesRunnerIdentity(t *testing.T) {
 			t.Fatalf("self update command leaked %q: %s", leaked, joined)
 		}
 	}
-	if os.PathSeparator != '\\' && !strings.Contains(joined, "/etc/codex-task-workbench-runner.env") {
-		t.Fatalf("self update command missing runner env file fallback: %s", joined)
+}
+
+func TestSelfUpdateArtifactName(t *testing.T) {
+	tests := []struct {
+		goos   string
+		goarch string
+		want   string
+	}{
+		{goos: "linux", goarch: "amd64", want: "runner-linux-amd64"},
+		{goos: "linux", goarch: "arm64", want: "runner-linux-arm64"},
+		{goos: "darwin", goarch: "amd64", want: "runner-darwin-amd64"},
+		{goos: "darwin", goarch: "arm64", want: "runner-darwin-arm64"},
+		{goos: "windows", goarch: "amd64", want: "runner-windows-amd64.exe"},
+	}
+	for _, tt := range tests {
+		got, err := selfUpdateArtifactName(tt.goos, tt.goarch)
+		if err != nil {
+			t.Fatalf("selfUpdateArtifactName(%q, %q): %v", tt.goos, tt.goarch, err)
+		}
+		if got != tt.want {
+			t.Fatalf("selfUpdateArtifactName(%q, %q) = %q, want %q", tt.goos, tt.goarch, got, tt.want)
+		}
+	}
+	if _, err := selfUpdateArtifactName("linux", "386"); err == nil {
+		t.Fatalf("unsupported artifact lookup should fail")
+	}
+}
+
+func TestSelfUpdateArtifactURLUsesArtifactEndpoint(t *testing.T) {
+	agent := New(Config{
+		ControlURL:  "http://control.local/",
+		RunnerID:    "runner_desktop",
+		CodexPath:   "/usr/local/bin/codex",
+		RunnerToken: "runner-token",
+	}, nil)
+	artifact, err := selfUpdateArtifactName(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		t.Skip(err)
+	}
+	got, err := agent.selfUpdateArtifactURL(time.Unix(123, 0).UTC())
+	if err != nil {
+		t.Fatalf("self update artifact URL: %v", err)
+	}
+	want := "http://control.local/api/v1/runner/artifacts/" + artifact + "?t=123"
+	if got != want {
+		t.Fatalf("artifact URL = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "runner_token=") || strings.Contains(got, "runner-token") {
+		t.Fatalf("artifact URL leaked runner token: %s", got)
 	}
 }
 

@@ -462,13 +462,15 @@ Runner update response:
 Runner update rules:
 
 - Only currently connected runners can be updated.
-- The runner must report `self_update`; older connected runners are skipped and
-  need one manual reinstall.
+- The runner must report `self_update_exec`; older connected runners are
+  skipped and need one manual reinstall.
 - The update reuses the normal install endpoints and preserves `runner_id`.
-  Windows uses `install.ps1`, while Linux and macOS use `install.sh`.
-- The runner token is used as a local updater secret and sent to install
-  endpoints with the `Authorization` header; clients and runners must not put
-  it in installer URLs.
+  Windows uses `install.ps1`. Current Linux and macOS runners download the
+  platform artifact directly, replace their own executable, and `exec` the new
+  process.
+- The runner token is used as a local updater secret and sent to install or
+  artifact endpoints with the `Authorization` header; clients and runners must
+  not put it in installer URLs.
 - `accepted` means the runner started its local updater process, not that the
   new runner has already reconnected.
 
@@ -1131,6 +1133,7 @@ Direction: runner to control plane.
       "codex_options": true,
       "active_runs": true,
       "self_update": true,
+      "self_update_exec": true,
       "shutdown": true
     }
   }
@@ -1351,11 +1354,12 @@ the request.
 }
 ```
 
-When accepted, the runner asynchronously reruns the platform install script
-using its current control URL, runner id, Codex path, and runner token as a
-local updater secret for `Authorization` headers. Windows runners use
-`install.ps1`; Linux and macOS runners use `install.sh`. The current websocket
-can disconnect while the binary is replaced and restarted.
+When accepted, the runner starts a local updater using its current control URL
+and runner token as a local updater secret for `Authorization` headers. Windows
+runners use `install.ps1`. Current Linux and macOS runners download the
+platform artifact directly, replace their own executable, and `exec` the new
+process. The current websocket can disconnect while the binary is replaced and
+restarted.
 
 ### `runner.shutdown`
 

@@ -280,6 +280,61 @@ case "$OS" in
     exit 1
     ;;
 esac
+user_writable_linux_update() {
+  [ "$PLATFORM" = "linux" ] || return 1
+  [ "$(id -u)" -ne 0 ] || return 1
+  [ -n "$RUNNER_ID" ] || return 1
+  [ -d "$INSTALL_DIR" ] || return 1
+  [ -w "$INSTALL_DIR" ] || return 1
+  [ -f "$RUNNER_BIN" ] || return 1
+  [ -w "$RUNNER_BIN" ] || return 1
+
+  echo "Updating existing user-writable runner binary from $CONTROL_URL/api/v1/runner/artifacts/$ARTIFACT"
+  RUNNER_TMP="$INSTALL_DIR/codex-task-workbench-runner.$$.download"
+  rm -f "$RUNNER_TMP"
+  if [ -n "$RUNNER_TOKEN" ]; then
+    curl -fsSL -H "Authorization: Bearer $RUNNER_TOKEN" "$CONTROL_URL/api/v1/runner/artifacts/$ARTIFACT?t=$(date +%%s)" -o "$RUNNER_TMP"
+  else
+    curl -fsSL "$CONTROL_URL/api/v1/runner/artifacts/$ARTIFACT?t=$(date +%%s)" -o "$RUNNER_TMP"
+  fi
+  chmod +x "$RUNNER_TMP"
+  mv -f "$RUNNER_TMP" "$RUNNER_BIN"
+
+  restarted="false"
+  if [ -f "$PID_FILE" ]; then
+    OLD_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
+    case "$OLD_PID" in
+      ''|*[!0-9]*) OLD_PID="" ;;
+    esac
+    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+      if [ -r "/proc/$OLD_PID/cmdline" ] && tr '\000' ' ' < "/proc/$OLD_PID/cmdline" | grep -F "$RUNNER_BIN" >/dev/null 2>&1; then
+        kill "$OLD_PID" 2>/dev/null || true
+        sleep 1
+      fi
+    fi
+    if [ -x "$WRAPPER" ]; then
+      cd "$INSTALL_DIR"
+      nohup "$WRAPPER" >> "$RUNNER_LOG" 2>> "$RUNNER_ERR_LOG" < /dev/null &
+      echo $! > "$PID_FILE"
+      restarted="true"
+    fi
+  fi
+
+  if [ "$restarted" != "true" ] && [ -d /proc ]; then
+    for PROC in /proc/[0-9]*; do
+      PID="${PROC#/proc/}"
+      [ "$PID" != "$$" ] || continue
+      if [ -r "$PROC/cmdline" ] && tr '\000' ' ' < "$PROC/cmdline" | grep -F "$RUNNER_BIN" >/dev/null 2>&1; then
+        kill -KILL "$PID" 2>/dev/null || true
+      fi
+    done
+  fi
+  echo "Runner binary updated. Supervised runners will restart with the new binary."
+  return 0
+}
+if user_writable_linux_update; then
+  exit 0
+fi
 if [ "$(id -u)" -ne 0 ]; then
   SUDO="sudo"
 else
@@ -336,6 +391,9 @@ fi
 $SUDO chmod +x "$RUNNER_TMP"
 $SUDO mv -f "$RUNNER_TMP" "$RUNNER_BIN"
 trap - EXIT
+if [ "$RUN_AS" = "user" ] && [ -n "$RUNNER_USER" ]; then
+  $SUDO chown -R "$RUNNER_USER" "$INSTALL_DIR"
+fi
 case "$PLATFORM" in
   linux)
     linux_systemd_available() {
@@ -527,9 +585,9 @@ func (a *API) handleRunnerUpdateAll(w http.ResponseWriter, r *http.Request) {
 			response.Results = append(response.Results, result)
 			continue
 		}
-		if !a.runners.Supports(server.RunnerID, "self_update") {
+		if !a.runners.Supports(server.RunnerID, "self_update_exec") {
 			result.Status = "skipped"
-			result.Message = "Connected runner is too old for in-app updates; reinstall it once from the install menu."
+			result.Message = "Connected runner is too old for reliable in-app updates; reinstall it once from the install menu."
 			response.Skipped++
 			response.Results = append(response.Results, result)
 			continue

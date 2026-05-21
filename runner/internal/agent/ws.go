@@ -5,7 +5,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -604,19 +607,34 @@ func (a *Agent) register() error {
 			"codex_options":       true,
 			"active_runs":         true,
 			"self_update":         true,
+			"self_update_exec":    true,
 			"shutdown":            true,
 		},
 	})
 }
 
 func (a *Agent) startSelfUpdate(ctx context.Context) RunnerControlResult {
-	command, args, err := a.selfUpdateCommand()
+	if runtime.GOOS == "windows" {
+		command, args, err := a.selfUpdateCommand()
+		if err != nil {
+			msg := err.Error()
+			return RunnerControlResult{Accepted: false, Message: "Runner update is not available on this host.", Error: &msg}
+		}
+		go func() {
+			if err := a.runSelfUpdate(ctx, command, args); err != nil {
+				a.logger.Warn("runner self-update failed", "error", err)
+			}
+		}()
+		return RunnerControlResult{Accepted: true, Message: "Runner update started. The websocket may disconnect while the runner restarts."}
+	}
+
+	artifactURL, err := a.selfUpdateArtifactURL(time.Now().UTC())
 	if err != nil {
 		msg := err.Error()
 		return RunnerControlResult{Accepted: false, Message: "Runner update is not available on this host.", Error: &msg}
 	}
 	go func() {
-		if err := a.runSelfUpdate(ctx, command, args); err != nil {
+		if err := a.runBinarySelfUpdate(ctx, artifactURL); err != nil {
 			a.logger.Warn("runner self-update failed", "error", err)
 		}
 	}()
@@ -662,25 +680,14 @@ func (a *Agent) selfUpdateCommand() (string, []string, error) {
 		query.Set("codex_path", a.cfg.CodexPath)
 	}
 
-	switch runtime.GOOS {
-	case "windows":
-		runAs := windowsRunnerRunAs()
-		query.Set("run_as", runAs)
-		installURL := controlURL + "/api/v1/runner/install.ps1?" + query.Encode()
-		script := "$headers=@{}; if ($env:RUNNER_UPDATE_TOKEN) { $headers['Authorization']='Bearer ' + $env:RUNNER_UPDATE_TOKEN }; Start-Sleep -Seconds 2; iex ((iwr -UseBasicParsing -Uri '" + strings.ReplaceAll(installURL, "'", "''") + "' -Headers $headers).Content)"
-		return windowsPowerShellExecutable(), []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}, nil
-	case "linux":
-		installURL := controlURL + "/api/v1/runner/install.sh?" + query.Encode()
-		installCommand := runnerInstallShellCommand(installURL)
-		script := "if command -v systemd-run >/dev/null 2>&1 && systemd-run --unit codex-task-workbench-runner-update --collect /bin/sh -lc " + shellSingleQuote(installCommand) + "; then :; else (" + installCommand + ") >/tmp/codex-task-workbench-runner-update.log 2>&1 </dev/null & fi"
-		return "/bin/sh", []string{"-lc", script}, nil
-	case "darwin":
-		installURL := controlURL + "/api/v1/runner/install.sh?" + query.Encode()
-		script := "(" + runnerInstallShellCommand(installURL) + ") >/tmp/codex-task-workbench-runner-update.log 2>&1 </dev/null &"
-		return "/bin/sh", []string{"-lc", script}, nil
-	default:
+	if runtime.GOOS != "windows" {
 		return "", nil, errors.New("unsupported operating system " + runtime.GOOS)
 	}
+	runAs := windowsRunnerRunAs()
+	query.Set("run_as", runAs)
+	installURL := controlURL + "/api/v1/runner/install.ps1?" + query.Encode()
+	script := "$headers=@{}; if ($env:RUNNER_UPDATE_TOKEN) { $headers['Authorization']='Bearer ' + $env:RUNNER_UPDATE_TOKEN }; Start-Sleep -Seconds 2; iex ((iwr -UseBasicParsing -Uri '" + strings.ReplaceAll(installURL, "'", "''") + "' -Headers $headers).Content)"
+	return windowsPowerShellExecutable(), []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script}, nil
 }
 
 func windowsRunnerRunAs() string {
@@ -697,13 +704,110 @@ func windowsRunnerRunAs() string {
 	return "user"
 }
 
-func shellSingleQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+func (a *Agent) selfUpdateArtifactURL(now time.Time) (string, error) {
+	controlURL := strings.TrimRight(a.cfg.ControlURL, "/")
+	if controlURL == "" {
+		return "", errors.New("CONTROL_URL is not set")
+	}
+	artifact, err := selfUpdateArtifactName(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return "", err
+	}
+	query := url.Values{}
+	query.Set("t", fmt.Sprintf("%d", now.Unix()))
+	return controlURL + "/api/v1/runner/artifacts/" + artifact + "?" + query.Encode(), nil
 }
 
-func runnerInstallShellCommand(installURL string) string {
-	quotedURL := shellSingleQuote(installURL)
-	return `sleep 2; if [ -z "${RUNNER_UPDATE_TOKEN:-}" ] && [ -r /etc/codex-task-workbench-runner.env ]; then RUNNER_UPDATE_TOKEN="$(sed -n 's/^RUNNER_TOKEN=//p' /etc/codex-task-workbench-runner.env | tail -n 1)"; fi; if [ -n "${RUNNER_UPDATE_TOKEN:-}" ]; then curl -fsSL -H "Authorization: Bearer ${RUNNER_UPDATE_TOKEN}" ` + quotedURL + ` | sh; else curl -fsSL ` + quotedURL + ` | sh; fi`
+func selfUpdateArtifactName(goos, goarch string) (string, error) {
+	switch goos {
+	case "linux":
+		switch goarch {
+		case "amd64":
+			return "runner-linux-amd64", nil
+		case "arm64":
+			return "runner-linux-arm64", nil
+		}
+	case "darwin":
+		switch goarch {
+		case "amd64":
+			return "runner-darwin-amd64", nil
+		case "arm64":
+			return "runner-darwin-arm64", nil
+		}
+	case "windows":
+		if goarch == "amd64" {
+			return "runner-windows-amd64.exe", nil
+		}
+	}
+	return "", errors.New("unsupported operating system or architecture " + goos + "/" + goarch)
+}
+
+func (a *Agent) runBinarySelfUpdate(ctx context.Context, artifactURL string) error {
+	updateCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	if !sleepContext(updateCtx, 2*time.Second) {
+		return updateCtx.Err()
+	}
+
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate runner executable: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
+		exePath = resolved
+	}
+
+	req, err := http.NewRequestWithContext(updateCtx, http.MethodGet, artifactURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Cache-Control", "no-cache")
+	if token := strings.TrimSpace(a.cfg.RunnerToken); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("download runner artifact: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("download runner artifact: status %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+
+	mode := os.FileMode(0o755)
+	if info, err := os.Stat(exePath); err == nil {
+		mode = info.Mode().Perm() | 0o111
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(exePath), ".codex-task-workbench-runner-*.download")
+	if err != nil {
+		return fmt.Errorf("create runner artifact temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	renamed := false
+	defer func() {
+		if !renamed {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := io.Copy(tmp, resp.Body); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write runner artifact temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close runner artifact temp file: %w", err)
+	}
+	if err := os.Chmod(tmpPath, mode); err != nil {
+		return fmt.Errorf("chmod runner artifact temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, exePath); err != nil {
+		return fmt.Errorf("replace runner executable: %w", err)
+	}
+	renamed = true
+
+	a.closeConn()
+	argv := append([]string{exePath}, os.Args[1:]...)
+	return execCurrentProcess(exePath, argv, os.Environ())
 }
 
 func defaultShutdown(ctx context.Context) error {

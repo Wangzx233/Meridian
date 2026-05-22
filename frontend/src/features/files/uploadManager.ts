@@ -2,8 +2,7 @@ import { Upload } from "tus-js-client";
 import { apiBaseUrl, ApiError } from "../../api";
 import type { ProjectFileActionResult } from "../../types";
 
-const fallbackUploadChunkBytes = 4 * 1024 * 1024;
-const streamUploadChunkBytes = 16 * 1024 * 1024;
+const uploadChunkBytes = 768 * 1024;
 
 export type ProjectFileUploadProgress = {
   id: string;
@@ -85,7 +84,7 @@ export function uploadProjectFile(input: UploadProjectFileInput) {
   const endpoint = `${apiBaseUrl}/projects/${encodeURIComponent(input.projectId)}/files/upload/tus`;
   const upload = new Upload(input.file, {
     endpoint,
-    chunkSize: input.stream_upload ? streamUploadChunkBytes : fallbackUploadChunkBytes,
+    chunkSize: uploadChunkBytes,
     retryDelays: [0, 1000, 3000, 5000],
     removeFingerprintOnSuccess: true,
     metadata: {

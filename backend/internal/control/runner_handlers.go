@@ -561,11 +561,17 @@ func (a *API) handleRunnerUpdateAll(w http.ResponseWriter, r *http.Request) {
 		a.respond(w, http.StatusOK, nil, err)
 		return
 	}
+	now := time.Now().UTC()
+	targetVersion := buildCommit()
+	updateProgress := a.runnerUpdates.Begin(targetVersion, now)
 	connected := a.runners.ConnectedRunnerIDs()
 	results := make([]RunnerUpdateServerResult, 0, len(servers))
 	response := RunnerUpdateAllResponse{
-		RequestedAt: time.Now().UTC(),
-		Results:     results,
+		RequestedAt:   updateProgress.RequestedAt,
+		UpdateID:      updateProgress.UpdateID,
+		TargetVersion: updateProgress.TargetVersion,
+		DeadlineAt:    updateProgress.DeadlineAt,
+		Results:       results,
 	}
 	for _, server := range servers {
 		result := RunnerUpdateServerResult{
@@ -573,26 +579,46 @@ func (a *API) handleRunnerUpdateAll(w http.ResponseWriter, r *http.Request) {
 			ServerName: serverDisplayName(server),
 			RunnerID:   server.RunnerID,
 		}
+		progressResult := RunnerUpdateProgressResult{
+			ServerID:   server.ID,
+			ServerName: serverDisplayName(server),
+			RunnerID:   server.RunnerID,
+			Status:     "requested",
+			Message:    "Update request is being sent to the runner.",
+			UpdatedAt:  now,
+		}
 		if info := a.runners.Info(server.RunnerID); info != nil {
 			if info.Version != "" {
 				result.PreviousVersion = &info.Version
+				progressResult.PreviousVersion = &info.Version
 			}
 		}
 		if !connected[server.RunnerID] {
 			result.Status = "skipped"
 			result.Message = "Runner is not connected."
+			progressResult.Status = result.Status
+			progressResult.Message = result.Message
+			progressResult.UpdatedAt = time.Now().UTC()
 			response.Skipped++
 			response.Results = append(response.Results, result)
+			a.runnerUpdates.Upsert(progressResult, progressResult.UpdatedAt)
 			continue
 		}
 		if !a.runners.Supports(server.RunnerID, "self_update_exec") {
 			result.Status = "skipped"
 			result.Message = "Connected runner is too old for reliable in-app updates; reinstall it once from the install menu."
+			progressResult.Status = result.Status
+			progressResult.Message = result.Message
+			progressResult.UpdatedAt = time.Now().UTC()
 			response.Skipped++
 			response.Results = append(response.Results, result)
+			a.runnerUpdates.Upsert(progressResult, progressResult.UpdatedAt)
 			continue
 		}
-		env, err := a.runners.Request(server.RunnerID, "runner.update", RunnerUpdateRequestPayload{}, 10*time.Second)
+		env, err := a.runners.Request(server.RunnerID, "runner.update", RunnerUpdateRequestPayload{
+			UpdateID:      updateProgress.UpdateID,
+			TargetVersion: targetVersion,
+		}, 10*time.Second)
 		if err != nil {
 			if errors.Is(err, ErrRunnerRequestTimeout) {
 				result.Status = "failed"
@@ -602,16 +628,26 @@ func (a *API) handleRunnerUpdateAll(w http.ResponseWriter, r *http.Request) {
 				result.Status = "failed"
 				result.Message = "Unable to send update request to runner."
 			}
+			progressResult.Status = result.Status
+			progressResult.Message = result.Message
+			progressResult.UpdatedAt = time.Now().UTC()
+			progressResult.Error = &result.Message
 			response.Failed++
 			response.Results = append(response.Results, result)
+			a.runnerUpdates.Upsert(progressResult, progressResult.UpdatedAt)
 			continue
 		}
 		var payload RunnerUpdateResponsePayload
 		if !decodeEnvelopePayload(env.Payload, &payload, a, "runner.update.response") {
 			result.Status = "failed"
 			result.Message = "Runner returned an invalid update response."
+			progressResult.Status = result.Status
+			progressResult.Message = result.Message
+			progressResult.UpdatedAt = time.Now().UTC()
+			progressResult.Error = &result.Message
 			response.Failed++
 			response.Results = append(response.Results, result)
+			a.runnerUpdates.Upsert(progressResult, progressResult.UpdatedAt)
 			continue
 		}
 		if payload.Accepted && payload.Error == nil {
@@ -620,6 +656,9 @@ func (a *API) handleRunnerUpdateAll(w http.ResponseWriter, r *http.Request) {
 			if result.Message == "" {
 				result.Message = "Runner accepted the update request."
 			}
+			progressResult.Status = "accepted"
+			progressResult.Message = result.Message
+			progressResult.UpdatedAt = time.Now().UTC()
 			response.Accepted++
 		} else {
 			result.Status = "failed"
@@ -630,9 +669,22 @@ func (a *API) handleRunnerUpdateAll(w http.ResponseWriter, r *http.Request) {
 			if result.Message == "" {
 				result.Message = "Runner rejected the update request."
 			}
+			progressResult.Status = result.Status
+			progressResult.Message = result.Message
+			progressResult.UpdatedAt = time.Now().UTC()
+			progressResult.Error = &result.Message
 			response.Failed++
 		}
 		response.Results = append(response.Results, result)
+		a.runnerUpdates.Upsert(progressResult, progressResult.UpdatedAt)
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (a *API) handleRunnerUpdateProgress(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, a.runnerUpdates.Latest(time.Now().UTC()))
 }

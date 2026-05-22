@@ -66,10 +66,55 @@ export type RunnerUpdateServerResult = {
 
 export type RunnerUpdateAllResponse = {
   requested_at: Timestamp;
+  update_id: string;
+  target_version: string;
+  deadline_at: Timestamp;
   accepted: number;
   skipped: number;
   failed: number;
   results: RunnerUpdateServerResult[];
+};
+
+export type RunnerUpdateProgressStatus =
+  | "requested"
+  | "accepted"
+  | "downloading"
+  | "replacing"
+  | "restarting"
+  | "waiting_reconnect"
+  | "succeeded"
+  | "up_to_date"
+  | "skipped"
+  | "failed"
+  | "timed_out"
+  | "version_mismatch"
+  | string;
+
+export type RunnerUpdateProgressResult = {
+  server_id: string;
+  server_name: string;
+  runner_id: string;
+  previous_version?: string;
+  current_version?: string;
+  status: RunnerUpdateProgressStatus;
+  message: string;
+  error?: string | null;
+  updated_at: Timestamp;
+  completed_at?: Timestamp | null;
+};
+
+export type RunnerUpdateProgress = {
+  update_id: string;
+  requested_at: Timestamp;
+  deadline_at: Timestamp;
+  target_version: string;
+  active: boolean;
+  total: number;
+  succeeded: number;
+  in_progress: number;
+  skipped: number;
+  failed: number;
+  results: RunnerUpdateProgressResult[];
 };
 
 export type Project = {

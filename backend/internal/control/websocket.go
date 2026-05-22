@@ -34,6 +34,7 @@ func (a *API) handleRunnerWS(w http.ResponseWriter, r *http.Request) {
 		if runnerID != "" {
 			a.fileTransfers.Close(runnerID)
 			if a.runners.Unregister(runnerID, conn) {
+				a.runnerUpdates.MarkDisconnected(runnerID, time.Now().UTC())
 				a.markRunnerOfflineAfterGrace(runnerID, 45*time.Second)
 			}
 		}
@@ -62,6 +63,12 @@ func (a *API) handleRunnerWS(w http.ResponseWriter, r *http.Request) {
 				CodexPath:   payload.CodexPath,
 				ConnectedAt: time.Now().UTC(),
 			}, payload.Capabilities)
+			a.runnerUpdates.MarkRegistered(payload.RunnerID, RunnerInfo{
+				Hostname:    payload.Hostname,
+				Version:     payload.Version,
+				CodexPath:   payload.CodexPath,
+				ConnectedAt: time.Now().UTC(),
+			}, time.Now().UTC())
 			if supportsCapability(payload.Capabilities, "active_runs") {
 				events, err := a.store.ReconcileRunnerActiveRuns(r.Context(), payload.RunnerID, payload.ActiveRunIDs, time.Now().UTC())
 				if err != nil {
@@ -105,6 +112,15 @@ func (a *API) handleRunnerWS(w http.ResponseWriter, r *http.Request) {
 			if !a.runners.HandleResponse(runnerID, env) {
 				a.logger.Warn("unmatched runner response", "type", env.Type, "message_id", env.MessageID, "runner_id", runnerID)
 			}
+		case "runner.update.status":
+			var payload RunnerUpdateStatusPayload
+			if !decodeEnvelopePayload(env.Payload, &payload, a, "runner.update.status") {
+				continue
+			}
+			if payload.RunnerID == "" {
+				payload.RunnerID = runnerID
+			}
+			a.runnerUpdates.MarkRunnerStatus(payload, time.Now().UTC())
 		case "project.terminal.output":
 			var payload ProjectTerminalOutputPayload
 			if !decodeEnvelopePayload(env.Payload, &payload, a, "project.terminal.output") {

@@ -15,6 +15,7 @@ type API struct {
 	hub           *EventHub
 	terminalHub   *TerminalHub
 	runners       *RunnerManager
+	runnerUpdates *RunnerUpdateTracker
 	fileTransfers *RunnerFileTransferManager
 	logger        *slog.Logger
 	auth          AuthConfig
@@ -29,6 +30,7 @@ func NewAPI(store *Store, logger *slog.Logger, auth AuthConfig) *API {
 		hub:           NewEventHub(),
 		terminalHub:   NewTerminalHub(),
 		runners:       NewRunnerManager(),
+		runnerUpdates: NewRunnerUpdateTracker(),
 		fileTransfers: NewRunnerFileTransferManager(),
 		logger:        logger,
 		auth:          auth,
@@ -53,6 +55,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/settings/email-notifications", a.handleEmailNotificationConfigs)
 	mux.HandleFunc("/api/v1/settings/email-notifications/", a.handleEmailNotificationConfigByID)
 	mux.HandleFunc("/api/v1/runs/", a.handleRunRoutes)
+	mux.HandleFunc("/api/v1/runners/update-progress", a.handleRunnerUpdateProgress)
 	mux.HandleFunc("/api/v1/runners/update-all", a.handleRunnerUpdateAll)
 	mux.HandleFunc("/api/v1/runner/ws", a.handleRunnerWS)
 	mux.HandleFunc("/api/v1/runner/file-transfer/ws", a.handleRunnerFileTransferWS)

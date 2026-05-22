@@ -39,7 +39,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
-import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunMode, CreateServerRequest, EmailNotificationConfigRequest, ListResponse, MarkDoneRequest, Project, Run, Task, WorkbenchNotification } from "../../types";
+import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunMode, CreateServerRequest, EmailNotificationConfigRequest, ListResponse, MarkDoneRequest, Project, Run, RunnerUpdateProgress, RunnerUpdateProgressResult, Task, WorkbenchNotification } from "../../types";
 import { isActiveRunStatus } from "../../utils";
 import {
   activeTaskStatuses,
@@ -57,7 +57,7 @@ import { errorNotice, runnerUpdateNotice } from "../../shared/notices";
 import type { Notice } from "../../shared/notices";
 import { useI18n } from "../../shared/i18n";
 import { useStoredPanelSize } from "../../shared/storage";
-import { ResizeHandle, Toast } from "../../shared/ui";
+import { EmptyState, ResizeHandle, Toast } from "../../shared/ui";
 import { notificationMessage, NotificationPopover } from "../notifications/NotificationPopover";
 import { NavPanel } from "../navigation/NavPanel";
 import { RunnerInstallPopover } from "../runner/RunnerInstallPopover";
@@ -116,6 +116,7 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
   const [installerOpen, setInstallerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [runnerUpdateProgressOpen, setRunnerUpdateProgressOpen] = useState(false);
   const [browserNotificationPermission, setBrowserNotificationPermission] = useState<NotificationPermission>(
     getBrowserNotificationPermission(),
   );
@@ -126,7 +127,14 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
     refetchInterval: 5_000,
   });
 
+  const runnerUpdateProgressQuery = useQuery({
+    queryKey: ["runner-update-progress"],
+    queryFn: api.getRunnerUpdateProgress,
+    refetchInterval: (query) => (query.state.data?.active || runnerUpdateProgressOpen ? 2_000 : false),
+  });
+
   const servers = serversQuery.data?.items ?? [];
+  const runnerUpdateProgress = runnerUpdateProgressQuery.data ?? null;
 
   useEffect(() => {
     if (servers.length === 0) {
@@ -348,7 +356,9 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
     mutationFn: api.updateAllRunners,
     onSuccess: (response) => {
       setNotice(runnerUpdateNotice(response));
+      setRunnerUpdateProgressOpen(true);
       void queryClient.invalidateQueries({ queryKey: ["servers"] });
+      void queryClient.invalidateQueries({ queryKey: ["runner-update-progress"] });
     },
     onError: (error) => setNotice(errorNotice(error, t("app.runnersUpdateFailed"))),
   });
@@ -813,6 +823,11 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
           deletingServer={deleteServerMutation.isPending}
           onUpdateAllRunners={() => updateAllRunnersMutation.mutate()}
           updatingAllRunners={updateAllRunnersMutation.isPending}
+          runnerUpdateProgress={runnerUpdateProgress}
+          onOpenRunnerUpdateProgress={() => {
+            setRunnerUpdateProgressOpen(true);
+            void runnerUpdateProgressQuery.refetch();
+          }}
           onCreateProject={(input) => createProjectMutation.mutate(input)}
           creatingProject={createProjectMutation.isPending}
           onDeleteProject={(projectId) => deleteProjectMutation.mutate(projectId)}
@@ -883,10 +898,161 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
           markingDone={markDoneMutation.isPending}
         />
       </main>
+      {runnerUpdateProgressOpen ? (
+        <RunnerUpdateProgressDialog
+          progress={runnerUpdateProgress}
+          state={queryState(runnerUpdateProgressQuery)}
+          onRefresh={() => {
+            void runnerUpdateProgressQuery.refetch();
+            void queryClient.invalidateQueries({ queryKey: ["servers"] });
+          }}
+          onClose={() => setRunnerUpdateProgressOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
 
+function RunnerUpdateProgressDialog(props: {
+  progress: RunnerUpdateProgress | null;
+  state: ReturnType<typeof queryState>;
+  onRefresh: () => void;
+  onClose: () => void;
+}) {
+  const progress = props.progress;
+  const summary = runnerUpdateSummary(progress);
+  return (
+    <div className="modalScrim" role="presentation" onMouseDown={props.onClose}>
+      <section
+        className="runnerUpdateDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="runner-update-dialog-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="dialogHeader">
+          <div className="panelTitle">
+            <span className="panelIcon" aria-hidden="true">
+              <Download size={16} />
+            </span>
+            <div>
+              <h2 id="runner-update-dialog-title">Runner update progress</h2>
+              <p>{summary}</p>
+            </div>
+          </div>
+          <div className="dialogActionGroup">
+            <button className="iconButton" type="button" onClick={props.onRefresh} aria-label="Refresh runner update progress" title="Refresh">
+              <RefreshCw size={16} />
+            </button>
+            <button className="iconButton" type="button" onClick={props.onClose} aria-label="Close runner update progress" title="Close">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+        <div className="runnerUpdateBody">
+          {props.state.isLoading ? (
+            <div className="stateBlock">
+              <Loader2 className="spin" size={18} />
+              <span>Loading update progress</span>
+            </div>
+          ) : props.state.isError ? (
+            <div className="stateBlock error">
+              <AlertTriangle size={18} />
+              <span>Unable to load runner update progress.</span>
+            </div>
+          ) : !progress?.update_id ? (
+            <EmptyState icon={<History size={22} />} title="No update request yet" body="Start a runner update to see per-server progress here." />
+          ) : (
+            <>
+              <div className="runnerUpdateOverview">
+                <div>
+                  <span>Target</span>
+                  <strong className="mono">{shortVersion(progress.target_version)}</strong>
+                </div>
+                <div>
+                  <span>Done</span>
+                  <strong>{progress.succeeded}</strong>
+                </div>
+                <div>
+                  <span>Running</span>
+                  <strong>{progress.in_progress}</strong>
+                </div>
+                <div>
+                  <span>Skipped</span>
+                  <strong>{progress.skipped}</strong>
+                </div>
+                <div>
+                  <span>Failed</span>
+                  <strong>{progress.failed}</strong>
+                </div>
+              </div>
+              <div className="runnerUpdateList">
+                {progress.results.map((result) => (
+                  <RunnerUpdateRow key={result.runner_id} result={result} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function RunnerUpdateRow(props: { result: RunnerUpdateProgressResult }) {
+  const tone = runnerUpdateTone(props.result.status);
+  return (
+    <div className="runnerUpdateRow">
+      <div className="runnerUpdateMain">
+        <div>
+          <strong>{props.result.server_name || props.result.runner_id}</strong>
+          <span className={`statusBadge tone-${tone}`}>{runnerUpdateStatusLabel(props.result.status)}</span>
+        </div>
+        <p>{props.result.error || props.result.message}</p>
+      </div>
+      <div className="runnerUpdateMeta">
+        <span className="mono">{props.result.runner_id}</span>
+        <span>
+          {shortVersion(props.result.previous_version)} -&gt; {shortVersion(props.result.current_version)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function runnerUpdateSummary(progress: RunnerUpdateProgress | null) {
+  if (!progress?.update_id) {
+    return "No runner update has been requested in this backend process.";
+  }
+  if (progress.active) {
+    return `${progress.in_progress} running, ${progress.succeeded} done, ${progress.failed} failed.`;
+  }
+  return `${progress.succeeded} done, ${progress.skipped} skipped, ${progress.failed} failed.`;
+}
+
+function runnerUpdateTone(status: string) {
+  if (status === "succeeded" || status === "up_to_date") {
+    return "success";
+  }
+  if (status === "skipped") {
+    return "muted";
+  }
+  if (status === "failed" || status === "timed_out" || status === "version_mismatch") {
+    return "danger";
+  }
+  return "attention";
+}
+
+function runnerUpdateStatusLabel(status: string) {
+  return status.replace(/_/g, " ");
+}
+
+function shortVersion(value: string | null | undefined) {
+  if (!value) {
+    return "unknown";
+  }
+  return value.length > 12 ? value.slice(0, 12) : value;
+}
 
 function getBrowserNotificationPermission(): NotificationPermission {
   if (typeof window === "undefined" || !("Notification" in window)) {

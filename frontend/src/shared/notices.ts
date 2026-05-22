@@ -38,6 +38,6 @@ export function runnerUpdateNotice(response: RunnerUpdateAllResponse): Notice {
   const skippedReason = response.results.find((result) => result.status === "skipped" && result.message.trim());
   return {
     tone,
-    message: `Runner update requested: ${details.join(", ")}.${skippedReason ? ` ${skippedReason.message}` : ""}`,
+    message: `Runner update requested: ${details.join(", ")}. Open update progress to follow reconnect and version checks.${skippedReason ? ` ${skippedReason.message}` : ""}`,
   };
 }

@@ -368,6 +368,7 @@ GET  /api/v1/servers/{server_id}
 PATCH /api/v1/servers/{server_id}
 GET  /api/v1/servers/{server_id}/directories?path={absolute_path}
 POST /api/v1/runners/update-all
+GET  /api/v1/runners/update-progress
 ```
 
 Create server request:
@@ -446,6 +447,9 @@ Runner update response:
 ```json
 {
   "requested_at": "2026-05-11T08:04:00Z",
+  "update_id": "upd_123",
+  "target_version": "abc123",
+  "deadline_at": "2026-05-11T08:09:00Z",
   "accepted": 1,
   "skipped": 1,
   "failed": 0,
@@ -457,6 +461,35 @@ Runner update response:
       "previous_version": "0.4.0",
       "status": "accepted",
       "message": "Runner update started. The websocket may disconnect while the runner restarts."
+    }
+  ]
+}
+```
+
+Runner update progress response:
+
+```json
+{
+  "update_id": "upd_123",
+  "requested_at": "2026-05-11T08:04:00Z",
+  "deadline_at": "2026-05-11T08:09:00Z",
+  "target_version": "abc123",
+  "active": true,
+  "total": 2,
+  "succeeded": 0,
+  "in_progress": 1,
+  "skipped": 1,
+  "failed": 0,
+  "results": [
+    {
+      "server_id": "srv_123",
+      "server_name": "Oracle backup",
+      "runner_id": "runner_desktop",
+      "previous_version": "0.4.0",
+      "current_version": "0.4.0",
+      "status": "downloading",
+      "message": "Downloading updated runner binary.",
+      "updated_at": "2026-05-11T08:04:02Z"
     }
   ]
 }
@@ -476,6 +509,14 @@ Runner update rules:
   not put it in installer URLs.
 - `accepted` means the runner started its local updater process, not that the
   new runner has already reconnected.
+- Progress is kept in memory for the latest update attempt in the current
+  backend process. It is live operator status, not durable audit history.
+- New runners report `downloading`, `replacing`, `restarting`, and `failed`
+  status messages. The control plane also infers `waiting_reconnect` on
+  websocket disconnect and `succeeded` or `version_mismatch` when the runner
+  reconnects.
+- Runners that accepted the request but never report completion are marked
+  `timed_out` after the progress deadline.
 
 Runner install endpoints:
 
@@ -1394,7 +1435,10 @@ Direction: control plane to runner.
   "type": "runner.update",
   "message_id": "msg_350",
   "sent_at": "2026-05-11T08:04:05Z",
-  "payload": {}
+  "payload": {
+    "update_id": "upd_123",
+    "target_version": "abc123"
+  }
 }
 ```
 
@@ -1421,6 +1465,32 @@ runners use `install.ps1`. Current Linux and macOS runners download the
 platform artifact directly, replace their own executable, and `exec` the new
 process. The current websocket can disconnect while the binary is replaced and
 restarted.
+
+### `runner.update.status`
+
+Direction: runner to control plane.
+
+```json
+{
+  "type": "runner.update.status",
+  "message_id": "msg_351",
+  "sent_at": "2026-05-11T08:04:06Z",
+  "payload": {
+    "update_id": "upd_123",
+    "runner_id": "runner_desktop",
+    "status": "downloading",
+    "message": "Downloading updated runner binary.",
+    "version": "0.4.0",
+    "target_version": "abc123",
+    "occurred_at": "2026-05-11T08:04:06Z"
+  }
+}
+```
+
+Allowed runner-reported status values include `downloading`, `replacing`,
+`restarting`, and `failed`. The HTTP progress endpoint may also expose inferred
+statuses such as `accepted`, `waiting_reconnect`, `succeeded`,
+`version_mismatch`, `timed_out`, `up_to_date`, and `skipped`.
 
 ### `runner.shutdown`
 

@@ -195,7 +195,13 @@ func (a *Agent) runOnce(ctx context.Context) (bool, error) {
 			accepted := a.cancel(payload.RunID)
 			_ = a.send("run.cancel_ack", map[string]any{"run_id": payload.RunID, "accepted": accepted})
 		case "runner.update":
-			_ = a.sendResponse("runner.update.response", env.MessageID, a.startSelfUpdate(ctx))
+			var payload RunnerUpdateRequest
+			if len(env.Payload) > 0 {
+				if err := json.Unmarshal(env.Payload, &payload); err != nil {
+					a.logger.Warn("invalid runner.update", "error", err)
+				}
+			}
+			_ = a.sendResponse("runner.update.response", env.MessageID, a.startSelfUpdate(ctx, payload))
 		case "runner.shutdown":
 			result, finish := a.prepareShutdown(ctx)
 			_ = a.sendResponse("runner.shutdown.response", env.MessageID, result)
@@ -823,7 +829,7 @@ func (a *Agent) register() error {
 	})
 }
 
-func (a *Agent) startSelfUpdate(ctx context.Context) RunnerControlResult {
+func (a *Agent) startSelfUpdate(ctx context.Context, request RunnerUpdateRequest) RunnerControlResult {
 	if runtime.GOOS == "windows" {
 		command, args, err := a.selfUpdateCommand()
 		if err != nil {
@@ -831,8 +837,10 @@ func (a *Agent) startSelfUpdate(ctx context.Context) RunnerControlResult {
 			return RunnerControlResult{Accepted: false, Message: "Runner update is not available on this host.", Error: &msg}
 		}
 		go func() {
+			a.sendUpdateStatus(request, "downloading", "Runner updater process is starting.", nil)
 			if err := a.runSelfUpdate(ctx, command, args); err != nil {
 				a.logger.Warn("runner self-update failed", "error", err)
+				a.sendUpdateStatus(request, "failed", "Runner self-update failed.", err)
 			}
 		}()
 		return RunnerControlResult{Accepted: true, Message: "Runner update started. The websocket may disconnect while the runner restarts."}
@@ -844,8 +852,9 @@ func (a *Agent) startSelfUpdate(ctx context.Context) RunnerControlResult {
 		return RunnerControlResult{Accepted: false, Message: "Runner update is not available on this host.", Error: &msg}
 	}
 	go func() {
-		if err := a.runBinarySelfUpdate(ctx, artifactURL); err != nil {
+		if err := a.runBinarySelfUpdate(ctx, request, artifactURL); err != nil {
 			a.logger.Warn("runner self-update failed", "error", err)
+			a.sendUpdateStatus(request, "failed", "Runner self-update failed.", err)
 		}
 	}()
 	return RunnerControlResult{Accepted: true, Message: "Runner update started. The websocket may disconnect while the runner restarts."}
@@ -915,7 +924,10 @@ func windowsRunnerRunAs() string {
 }
 
 func (a *Agent) selfUpdateArtifactURL(now time.Time) (string, error) {
-	controlURL := strings.TrimRight(a.cfg.ControlURL, "/")
+	controlURL, err := runnerHTTPBaseURL(a.cfg.ControlURL)
+	if err != nil {
+		return "", err
+	}
 	if controlURL == "" {
 		return "", errors.New("CONTROL_URL is not set")
 	}
@@ -926,6 +938,33 @@ func (a *Agent) selfUpdateArtifactURL(now time.Time) (string, error) {
 	query := url.Values{}
 	query.Set("t", fmt.Sprintf("%d", now.Unix()))
 	return controlURL + "/api/v1/runner/artifacts/" + artifact + "?" + query.Encode(), nil
+}
+
+func runnerHTTPBaseURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", errors.New("CONTROL_URL is not set")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	switch u.Scheme {
+	case "http", "https":
+	case "ws":
+		u.Scheme = "http"
+	case "wss":
+		u.Scheme = "https"
+	default:
+		return "", errors.New("CONTROL_URL must use http, https, ws, or wss")
+	}
+	if strings.HasSuffix(strings.TrimRight(u.Path, "/"), "/api/v1/runner/ws") {
+		u.Path = strings.TrimSuffix(strings.TrimRight(u.Path, "/"), "/api/v1/runner/ws")
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	u.RawQuery = ""
+	u.Fragment = ""
+	return strings.TrimRight(u.String(), "/"), nil
 }
 
 func selfUpdateArtifactName(goos, goarch string) (string, error) {
@@ -952,7 +991,7 @@ func selfUpdateArtifactName(goos, goarch string) (string, error) {
 	return "", errors.New("unsupported operating system or architecture " + goos + "/" + goarch)
 }
 
-func (a *Agent) runBinarySelfUpdate(ctx context.Context, artifactURL string) error {
+func (a *Agent) runBinarySelfUpdate(ctx context.Context, request RunnerUpdateRequest, artifactURL string) error {
 	updateCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	if !sleepContext(updateCtx, 2*time.Second) {
@@ -975,6 +1014,7 @@ func (a *Agent) runBinarySelfUpdate(ctx context.Context, artifactURL string) err
 	if token := strings.TrimSpace(a.cfg.RunnerToken); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	a.sendUpdateStatus(request, "downloading", "Downloading updated runner binary.", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("download runner artifact: %w", err)
@@ -1010,14 +1050,37 @@ func (a *Agent) runBinarySelfUpdate(ctx context.Context, artifactURL string) err
 	if err := os.Chmod(tmpPath, mode); err != nil {
 		return fmt.Errorf("chmod runner artifact temp file: %w", err)
 	}
+	a.sendUpdateStatus(request, "replacing", "Replacing runner executable.", nil)
 	if err := os.Rename(tmpPath, exePath); err != nil {
 		return fmt.Errorf("replace runner executable: %w", err)
 	}
 	renamed = true
 
+	a.sendUpdateStatus(request, "restarting", "Restarting runner with updated executable.", nil)
 	a.closeConn()
 	argv := append([]string{exePath}, os.Args[1:]...)
 	return execCurrentProcess(exePath, argv, os.Environ())
+}
+
+func (a *Agent) sendUpdateStatus(request RunnerUpdateRequest, status, message string, updateErr error) {
+	if strings.TrimSpace(request.UpdateID) == "" {
+		return
+	}
+	var errText *string
+	if updateErr != nil {
+		msg := updateErr.Error()
+		errText = &msg
+	}
+	_ = a.send("runner.update.status", RunnerUpdateStatus{
+		UpdateID:      request.UpdateID,
+		RunnerID:      a.cfg.RunnerID,
+		Status:        status,
+		Message:       message,
+		Version:       a.cfg.Version,
+		TargetVersion: request.TargetVersion,
+		Error:         errText,
+		OccurredAt:    time.Now().UTC(),
+	})
 }
 
 func defaultShutdown(ctx context.Context) error {

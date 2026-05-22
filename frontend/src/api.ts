@@ -21,6 +21,7 @@ import type {
   Run,
   RunEvent,
   RunnerUpdateAllResponse,
+  RunnerUpdateProgress,
   Server,
   Task,
   TaskStatus,
@@ -147,6 +148,8 @@ export const api = {
     request<DirectoryListing>(`/servers/${encodeURIComponent(serverId)}/directories${queryString({ path })}`),
   updateAllRunners: () =>
     request<RunnerUpdateAllResponse>("/runners/update-all", { method: "POST" }),
+  getRunnerUpdateProgress: () =>
+    request<RunnerUpdateProgress>("/runners/update-progress"),
 
   listProjects: (serverId?: string) =>
     request<ListResponse<Project>>(`/projects${queryString({ server_id: serverId })}`).then(normalizeList),

@@ -436,7 +436,10 @@ type RunCancelAckPayload struct {
 	Accepted bool   `json:"accepted"`
 }
 
-type RunnerUpdateRequestPayload struct{}
+type RunnerUpdateRequestPayload struct {
+	UpdateID      string `json:"update_id,omitempty"`
+	TargetVersion string `json:"target_version,omitempty"`
+}
 
 type RunnerControlResponsePayload struct {
 	Accepted bool    `json:"accepted"`
@@ -445,6 +448,17 @@ type RunnerControlResponsePayload struct {
 }
 
 type RunnerUpdateResponsePayload = RunnerControlResponsePayload
+
+type RunnerUpdateStatusPayload struct {
+	UpdateID      string    `json:"update_id"`
+	RunnerID      string    `json:"runner_id,omitempty"`
+	Status        string    `json:"status"`
+	Message       string    `json:"message,omitempty"`
+	Version       string    `json:"version,omitempty"`
+	TargetVersion string    `json:"target_version,omitempty"`
+	Error         *string   `json:"error,omitempty"`
+	OccurredAt    time.Time `json:"occurred_at"`
+}
 
 type RunnerShutdownRequestPayload struct {
 	Reason string `json:"reason,omitempty"`
@@ -462,9 +476,39 @@ type RunnerUpdateServerResult struct {
 }
 
 type RunnerUpdateAllResponse struct {
-	RequestedAt time.Time                  `json:"requested_at"`
-	Accepted    int                        `json:"accepted"`
-	Skipped     int                        `json:"skipped"`
-	Failed      int                        `json:"failed"`
-	Results     []RunnerUpdateServerResult `json:"results"`
+	RequestedAt   time.Time                  `json:"requested_at"`
+	UpdateID      string                     `json:"update_id"`
+	TargetVersion string                     `json:"target_version"`
+	DeadlineAt    time.Time                  `json:"deadline_at"`
+	Accepted      int                        `json:"accepted"`
+	Skipped       int                        `json:"skipped"`
+	Failed        int                        `json:"failed"`
+	Results       []RunnerUpdateServerResult `json:"results"`
+}
+
+type RunnerUpdateProgressResult struct {
+	ServerID        string     `json:"server_id"`
+	ServerName      string     `json:"server_name"`
+	RunnerID        string     `json:"runner_id"`
+	PreviousVersion *string    `json:"previous_version,omitempty"`
+	CurrentVersion  *string    `json:"current_version,omitempty"`
+	Status          string     `json:"status"`
+	Message         string     `json:"message"`
+	Error           *string    `json:"error,omitempty"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+}
+
+type RunnerUpdateProgress struct {
+	UpdateID      string                       `json:"update_id"`
+	RequestedAt   time.Time                    `json:"requested_at"`
+	DeadlineAt    time.Time                    `json:"deadline_at"`
+	TargetVersion string                       `json:"target_version"`
+	Active        bool                         `json:"active"`
+	Total         int                          `json:"total"`
+	Succeeded     int                          `json:"succeeded"`
+	InProgress    int                          `json:"in_progress"`
+	Skipped       int                          `json:"skipped"`
+	Failed        int                          `json:"failed"`
+	Results       []RunnerUpdateProgressResult `json:"results"`
 }

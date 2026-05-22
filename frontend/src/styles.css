@@ -1764,6 +1764,18 @@ textarea:disabled {
   box-shadow: 0 22px 52px rgb(23 32 26 / 24%);
 }
 
+.runnerUpdateDialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 22px 52px rgb(23 32 26 / 24%);
+}
+
 .dialogHeader {
   display: flex;
   align-items: center;
@@ -1771,6 +1783,116 @@ textarea:disabled {
   gap: 12px;
   padding: 12px;
   border-bottom: 1px solid var(--border);
+}
+
+.dialogActionGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.runnerUpdateBody {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.runnerUpdateOverview {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.runnerUpdateOverview > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+
+.runnerUpdateOverview span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.runnerUpdateOverview strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runnerUpdateList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.runnerUpdateRow {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 220px);
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.runnerUpdateMain {
+  min-width: 0;
+}
+
+.runnerUpdateMain > div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.runnerUpdateMain strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runnerUpdateMain p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.runnerUpdateMeta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.runnerUpdateMeta span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .projectDialogBody {
@@ -3395,9 +3517,19 @@ textarea:disabled {
   }
 
   .projectDialog,
-  .settingsDialog {
+  .settingsDialog,
+  .runnerUpdateDialog {
     width: 100%;
     max-height: calc(100dvh - 20px);
+  }
+
+  .runnerUpdateOverview,
+  .runnerUpdateRow {
+    grid-template-columns: 1fr;
+  }
+
+  .runnerUpdateMeta {
+    align-items: flex-start;
   }
 
   .projectDialogBody {

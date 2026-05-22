@@ -135,6 +135,12 @@ the new process. This avoids requiring non-interactive `sudo` from Linux
 runners installed with the default `run_as=user` mode. The control plane only
 sends one-click updates to connected runners that report `self_update_exec`;
 older runners are skipped and need one reinstall from the install menu.
+The web UI keeps a live in-memory progress view for the latest one-click update:
+new runners report download, replace, restart, and failure status; the control
+plane also marks runners waiting for reconnect, verifies the reconnected runner
+version against the backend build commit, and times out attempts that never
+finish. If the backend container restarts during an update, progress history is
+lost, but runners continue their local update process.
 
 ## Runner User And Codex Config
 

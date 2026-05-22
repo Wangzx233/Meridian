@@ -39,7 +39,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api";
-import type { CreateServerRequest, DirectoryEntry, Project, Server } from "../../types";
+import type { CreateServerRequest, DirectoryEntry, Project, RunnerUpdateProgress, Server } from "../../types";
 import { runnerCapabilitySummary } from "../../shared/runnerCapabilities";
 import { serverDisplayName } from "../../shared/serverDisplay";
 import { useI18n } from "../../shared/i18n";
@@ -65,6 +65,8 @@ export function NavPanel(props: {
   deletingServer: boolean;
   onUpdateAllRunners: () => void;
   updatingAllRunners: boolean;
+  runnerUpdateProgress: RunnerUpdateProgress | null;
+  onOpenRunnerUpdateProgress: () => void;
   onCreateProject: (input: {
     server_id: string;
     name: string;
@@ -163,6 +165,15 @@ export function NavPanel(props: {
               >
                 {props.updatingAllRunners ? <Loader2 className="spin" size={16} /> : <Download size={16} />}
                 <span>{t("nav.updateAllShort")}</span>
+              </button>
+              <button
+                className={`iconButton ${props.runnerUpdateProgress?.active ? "isActive" : ""}`}
+                type="button"
+                onClick={props.onOpenRunnerUpdateProgress}
+                aria-label={t("nav.updateProgress")}
+                title={t("nav.updateProgress")}
+              >
+                <History size={16} />
               </button>
               <button
                 className="iconButton"

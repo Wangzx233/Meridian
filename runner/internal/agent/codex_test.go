@@ -622,26 +622,37 @@ func TestSelfUpdateArtifactName(t *testing.T) {
 }
 
 func TestSelfUpdateArtifactURLUsesArtifactEndpoint(t *testing.T) {
-	agent := New(Config{
-		ControlURL:  "http://control.local/",
-		RunnerID:    "runner_desktop",
-		CodexPath:   "/usr/local/bin/codex",
-		RunnerToken: "runner-token",
-	}, nil)
 	artifact, err := selfUpdateArtifactName(runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		t.Skip(err)
 	}
-	got, err := agent.selfUpdateArtifactURL(time.Unix(123, 0).UTC())
-	if err != nil {
-		t.Fatalf("self update artifact URL: %v", err)
+	tests := []struct {
+		controlURL string
+		wantBase   string
+	}{
+		{controlURL: "http://control.local/", wantBase: "http://control.local"},
+		{controlURL: "https://control.local/base", wantBase: "https://control.local/base"},
+		{controlURL: "ws://control.local/api/v1/runner/ws", wantBase: "http://control.local"},
+		{controlURL: "wss://control.local", wantBase: "https://control.local"},
 	}
-	want := "http://control.local/api/v1/runner/artifacts/" + artifact + "?t=123"
-	if got != want {
-		t.Fatalf("artifact URL = %q, want %q", got, want)
-	}
-	if strings.Contains(got, "runner_token=") || strings.Contains(got, "runner-token") {
-		t.Fatalf("artifact URL leaked runner token: %s", got)
+	for _, tt := range tests {
+		agent := New(Config{
+			ControlURL:  tt.controlURL,
+			RunnerID:    "runner_desktop",
+			CodexPath:   "/usr/local/bin/codex",
+			RunnerToken: "runner-token",
+		}, nil)
+		got, err := agent.selfUpdateArtifactURL(time.Unix(123, 0).UTC())
+		if err != nil {
+			t.Fatalf("self update artifact URL for %q: %v", tt.controlURL, err)
+		}
+		want := tt.wantBase + "/api/v1/runner/artifacts/" + artifact + "?t=123"
+		if got != want {
+			t.Fatalf("artifact URL for %q = %q, want %q", tt.controlURL, got, want)
+		}
+		if strings.Contains(got, "runner_token=") || strings.Contains(got, "runner-token") {
+			t.Fatalf("artifact URL leaked runner token: %s", got)
+		}
 	}
 }
 

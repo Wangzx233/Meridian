@@ -52,6 +52,22 @@ type RunnerControlResult struct {
 	Error    *string `json:"error,omitempty"`
 }
 
+type RunnerUpdateRequest struct {
+	UpdateID      string `json:"update_id,omitempty"`
+	TargetVersion string `json:"target_version,omitempty"`
+}
+
+type RunnerUpdateStatus struct {
+	UpdateID      string    `json:"update_id"`
+	RunnerID      string    `json:"runner_id,omitempty"`
+	Status        string    `json:"status"`
+	Message       string    `json:"message,omitempty"`
+	Version       string    `json:"version,omitempty"`
+	TargetVersion string    `json:"target_version,omitempty"`
+	Error         *string   `json:"error,omitempty"`
+	OccurredAt    time.Time `json:"occurred_at"`
+}
+
 type CodexRunner struct {
 	Env       []string
 	OnStarted func(pid int)

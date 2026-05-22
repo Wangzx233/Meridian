@@ -641,11 +641,12 @@ Rules:
 - Resumable browser uploads use the tus 1.0 protocol subset implemented at
   `/files/upload/tus`. The web UI uses `tus-js-client`, creates an upload with
   `POST`, resumes with `HEAD`, and sends binary `PATCH` chunks with
-  `Upload-Offset`. Each PATCH body is limited to 4 MiB. If the connected runner
-  supports `project_file_upload_stream`, the control plane forwards the chunk to
-  the runner file-transfer WebSocket as a binary frame instead of embedding file
-  bytes in the control WebSocket JSON stream. Older runners fall back to
-  `project.file.upload.chunk`.
+  `Upload-Offset`. If the connected runner supports
+  `project_file_upload_stream`, the web UI does not force a small tus chunk
+  size and the control plane streams the PATCH body to the runner file-transfer
+  WebSocket as a binary frame instead of reading the whole chunk into memory.
+  Older runners fall back to `project.file.upload.chunk`, where each PATCH body
+  is limited to 4 MiB.
 - Parallel tus uploads are not enabled yet because tus-js-client requires the
   tus Concatenation extension for that mode. Enabling it would require separate
   partial upload resources plus a runner-side concat step before replacing the
@@ -1772,7 +1773,9 @@ WebSocket. It registers with:
 
 For each `project.file.upload.stream` request, the control plane sends one JSON
 text frame with metadata, followed immediately by one binary frame containing
-the raw upload chunk bytes:
+the raw upload bytes. The control plane writes that binary frame directly from
+the incoming tus PATCH body, and the runner writes it directly into the partial
+file:
 
 ```json
 {

@@ -206,7 +206,7 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
       return;
     }
     setUploadError(null);
-    uploadProjectFile({ projectId: props.project.id, path, file, create_dirs: true });
+    uploadProjectFile({ projectId: props.project.id, path, file, create_dirs: true, stream_upload: props.server?.runner_capabilities?.project_file_upload_stream === true });
   };
 
   useEffect(() => {
@@ -309,13 +309,13 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
         <InlineNotice key={upload.id} tone={upload.error ? "danger" : "info"}>
           <span className="uploadNoticeContent">
             <span>
-              Uploading {upload.filename}: {formatBytes(upload.uploadedBytes)} / {formatBytes(upload.totalBytes)}
-              {upload.sentBytes > upload.uploadedBytes ? ` sent ${formatBytes(upload.sentBytes)}` : ""}
+              Uploading {upload.filename}: {formatBytes(Math.max(upload.uploadedBytes, upload.sentBytes))} / {formatBytes(upload.totalBytes)}
+              {upload.sentBytes > upload.uploadedBytes ? ` confirmed ${formatBytes(upload.uploadedBytes)}` : ""}
               {upload.resumed ? " resumed" : ""}
               {upload.complete ? " complete" : ""}
               {upload.error ? ` - ${errorNotice(upload.error, "Unable to upload file.").message}` : ""}
             </span>
-            <progress value={upload.totalBytes > 0 ? upload.uploadedBytes : 1} max={upload.totalBytes > 0 ? upload.totalBytes : 1} />
+            <progress value={upload.totalBytes > 0 ? Math.max(upload.uploadedBytes, upload.sentBytes) : 1} max={upload.totalBytes > 0 ? upload.totalBytes : 1} />
             {(upload.complete || upload.error) ? (
               <button className="ghostButton compact" type="button" onClick={() => clearCompletedProjectFileUpload(upload.id)}>
                 Dismiss

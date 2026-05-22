@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"os"
@@ -326,6 +327,10 @@ func projectFileUploadStatus(root, path, uploadID string, totalSize int64) Proje
 }
 
 func writeProjectFileUploadChunk(root, path, uploadID string, offset, totalSize int64, content []byte, createDirs, final bool) ProjectFileActionResult {
+	return writeProjectFileUploadChunkStream(root, path, uploadID, offset, totalSize, int64(len(content)), bytes.NewReader(content), createDirs, final)
+}
+
+func writeProjectFileUploadChunkStream(root, path, uploadID string, offset, totalSize, chunkBytes int64, content io.Reader, createDirs, final bool) ProjectFileActionResult {
 	cleanRoot, target, relPath, err := resolveProjectWritablePath(root, path)
 	if err != nil {
 		msg := err.Error()
@@ -335,7 +340,11 @@ func writeProjectFileUploadChunk(root, path, uploadID string, offset, totalSize 
 		msg := "offset and total_size must be non-negative"
 		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
 	}
-	uploadedBytes := offset + int64(len(content))
+	if chunkBytes < 0 {
+		msg := "chunk_bytes must be non-negative"
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: offset, TotalSize: totalSize, ResumeOffset: offset, Error: &msg}
+	}
+	uploadedBytes := offset + chunkBytes
 	if uploadedBytes > totalSize {
 		msg := "upload chunk exceeds total_size"
 		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: offset, TotalSize: totalSize, ResumeOffset: offset, Error: &msg}
@@ -392,16 +401,21 @@ func writeProjectFileUploadChunk(root, path, uploadID string, offset, totalSize 
 		msg := err.Error()
 		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: offset, TotalSize: totalSize, ResumeOffset: offset, Error: &msg}
 	}
-	if len(content) > 0 {
-		if n, err := file.WriteAt(content, offset); err != nil {
-			_ = file.Close()
-			msg := err.Error()
-			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: offset + int64(n), TotalSize: totalSize, ResumeOffset: offset + int64(n), Error: &msg}
-		} else if n != len(content) {
-			_ = file.Close()
-			msg := "short write"
-			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: offset + int64(n), TotalSize: totalSize, ResumeOffset: offset + int64(n), Error: &msg}
-		}
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		_ = file.Close()
+		msg := err.Error()
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: offset, TotalSize: totalSize, ResumeOffset: offset, Error: &msg}
+	}
+	written, err := io.Copy(file, io.LimitReader(content, chunkBytes))
+	if err != nil {
+		_ = file.Close()
+		msg := err.Error()
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: offset + written, TotalSize: totalSize, ResumeOffset: offset + written, Error: &msg}
+	}
+	if written != chunkBytes {
+		_ = file.Close()
+		msg := "short write"
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: offset + written, TotalSize: totalSize, ResumeOffset: offset + written, Error: &msg}
 	}
 	if err := file.Close(); err != nil {
 		msg := err.Error()

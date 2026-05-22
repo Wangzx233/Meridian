@@ -1,9 +1,11 @@
 package control
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -100,6 +102,10 @@ func (m *RunnerFileTransferManager) Close(runnerID string) {
 }
 
 func (m *RunnerFileTransferManager) Request(runnerID, typ string, payload any, data []byte, timeout time.Duration) (RunnerEnvelope, error) {
+	return m.RequestStream(runnerID, typ, payload, bytes.NewReader(data), timeout)
+}
+
+func (m *RunnerFileTransferManager) RequestStream(runnerID, typ string, payload any, stream io.Reader, timeout time.Duration) (RunnerEnvelope, error) {
 	if runnerID == "" {
 		return RunnerEnvelope{}, ErrRunnerUnavailable
 	}
@@ -114,7 +120,7 @@ func (m *RunnerFileTransferManager) Request(runnerID, typ string, payload any, d
 	client.addPending(messageID, ch)
 	defer client.removePending(messageID)
 
-	if err := client.writeUploadRequest(typ, messageID, payload, data); err != nil {
+	if err := client.writeUploadRequest(typ, messageID, payload, stream); err != nil {
 		return RunnerEnvelope{}, err
 	}
 	if timeout <= 0 {
@@ -144,7 +150,7 @@ func (m *RunnerFileTransferManager) HandleResponse(runnerID string, env RunnerEn
 	return client.deliver(env)
 }
 
-func (c *RunnerFileTransferClient) writeUploadRequest(typ, messageID string, payload any, data []byte) error {
+func (c *RunnerFileTransferClient) writeUploadRequest(typ, messageID string, payload any, stream io.Reader) error {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -160,8 +166,17 @@ func (c *RunnerFileTransferClient) writeUploadRequest(typ, messageID string, pay
 	if err := c.conn.WriteJSON(env); err != nil {
 		return err
 	}
-	if err := c.conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
-		return fmt.Errorf("write upload data: %w", err)
+	writer, err := c.conn.NextWriter(websocket.BinaryMessage)
+	if err != nil {
+		return fmt.Errorf("open upload data writer: %w", err)
+	}
+	_, copyErr := io.Copy(writer, stream)
+	closeErr := writer.Close()
+	if copyErr != nil {
+		return fmt.Errorf("write upload data: %w", copyErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("write upload data: %w", closeErr)
 	}
 	return nil
 }

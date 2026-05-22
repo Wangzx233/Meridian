@@ -1,6 +1,7 @@
 package control
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -237,6 +238,43 @@ func (a *API) handleProjectFileTusResource(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusBadRequest, "validation_error", "Upload-Offset must be a non-negative integer.", nil)
 			return
 		}
+		project, server, ok := a.projectAndServerForRunnerRequest(w, r, projectID, "project_file_upload_chunked")
+		if !ok {
+			return
+		}
+		if a.runners.Supports(server.RunnerID, "project_file_upload_stream") {
+			if !a.fileTransfers.WaitConnected(r.Context(), server.RunnerID, 2*time.Second) {
+				a.respond(w, http.StatusOK, nil, ErrRunnerUnavailable)
+				return
+			}
+			length := r.ContentLength
+			if length < 0 {
+				writeError(w, http.StatusLengthRequired, "validation_error", "Content-Length is required for streamed uploads.", nil)
+				return
+			}
+			if offset+length > token.TotalSize {
+				writeError(w, http.StatusBadRequest, "validation_error", "Upload chunk exceeds total_size.", nil)
+				return
+			}
+			final := offset+length == token.TotalSize
+			result, ok := a.requestProjectFileUploadStreamChunk(w, server.RunnerID, project.Workdir, token.Path, token.UploadID, offset, token.TotalSize, length, r.Body, token.CreateDirs, final)
+			if closeErr := r.Body.Close(); !ok {
+				return
+			} else if closeErr != nil {
+				writeError(w, http.StatusBadRequest, "validation_error", "Unable to read upload chunk.", nil)
+				return
+			}
+			nextOffset := result.ResumeOffset
+			if nextOffset == 0 && result.UploadedBytes > 0 {
+				nextOffset = result.UploadedBytes
+			}
+			w.Header().Set("Upload-Offset", strconv.FormatInt(nextOffset, 10))
+			if result.Complete {
+				w.Header().Set("Upload-Info", encodeTusUploadInfo(result))
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		r.Body = http.MaxBytesReader(w, r.Body, maxProjectFileUploadChunkBytes+1)
 		data, err := io.ReadAll(io.LimitReader(r.Body, maxProjectFileUploadChunkBytes+1))
 		if closeErr := r.Body.Close(); err == nil {
@@ -445,7 +483,7 @@ func (a *API) requestProjectFileUploadChunk(w http.ResponseWriter, r *http.Reque
 			a.respond(w, http.StatusOK, nil, ErrRunnerUnavailable)
 			return ProjectFileActionResult{}, false
 		}
-		result, handled := a.requestProjectFileUploadStreamChunk(w, server.RunnerID, project.Workdir, targetPath, uploadID, offset, totalSize, data, createDirs, final)
+		result, handled := a.requestProjectFileUploadStreamChunk(w, server.RunnerID, project.Workdir, targetPath, uploadID, offset, totalSize, int64(len(data)), bytes.NewReader(data), createDirs, final)
 		if handled {
 			return result, true
 		}
@@ -481,17 +519,17 @@ func (a *API) requestProjectFileUploadChunk(w http.ResponseWriter, r *http.Reque
 	return result, true
 }
 
-func (a *API) requestProjectFileUploadStreamChunk(w http.ResponseWriter, runnerID, workdir, targetPath, uploadID string, offset, totalSize int64, data []byte, createDirs, final bool) (ProjectFileActionResult, bool) {
-	env, err := a.fileTransfers.Request(runnerID, "project.file.upload.stream", ProjectFileUploadStreamRequestPayload{
+func (a *API) requestProjectFileUploadStreamChunk(w http.ResponseWriter, runnerID, workdir, targetPath, uploadID string, offset, totalSize, chunkBytes int64, stream io.Reader, createDirs, final bool) (ProjectFileActionResult, bool) {
+	env, err := a.fileTransfers.RequestStream(runnerID, "project.file.upload.stream", ProjectFileUploadStreamRequestPayload{
 		Workdir:    workdir,
 		Path:       targetPath,
 		UploadID:   uploadID,
 		Offset:     offset,
 		TotalSize:  totalSize,
-		ChunkBytes: int64(len(data)),
+		ChunkBytes: chunkBytes,
 		CreateDirs: createDirs,
 		Final:      final,
-	}, data, 2*time.Minute)
+	}, stream, 30*time.Minute)
 	if err != nil {
 		a.respondRunnerRequestError(w, runnerID, "project file upload stream request", err)
 		return ProjectFileActionResult{}, false

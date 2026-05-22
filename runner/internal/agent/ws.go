@@ -457,7 +457,7 @@ func (a *Agent) runFileTransferOnce(ctx context.Context) error {
 			})
 			continue
 		}
-		messageType, data, err := conn.ReadMessage()
+		messageType, data, err := conn.NextReader()
 		if err != nil {
 			return err
 		}
@@ -705,14 +705,10 @@ func (a *Agent) handleProjectFileUploadChunk(messageID string, raw json.RawMessa
 	_ = a.sendResponse("project.file.upload.chunk.response", messageID, writeProjectFileUploadChunk(payload.Workdir, payload.Path, payload.UploadID, payload.Offset, payload.TotalSize, content, payload.CreateDirs, payload.Final))
 }
 
-func (a *Agent) handleProjectFileUploadStream(payload projectFileUploadStreamPayload, data []byte) ProjectFileActionResult {
-	if int64(len(data)) != payload.ChunkBytes {
-		msg := "upload stream data length mismatch"
-		return ProjectFileActionResult{Path: payload.Path, TotalSize: payload.TotalSize, ResumeOffset: payload.Offset, Error: &msg}
-	}
+func (a *Agent) handleProjectFileUploadStream(payload projectFileUploadStreamPayload, data io.Reader) ProjectFileActionResult {
 	unlock := a.lockProjectFileUpload(payload.Workdir, payload.Path, payload.UploadID)
 	defer unlock()
-	return writeProjectFileUploadChunk(payload.Workdir, payload.Path, payload.UploadID, payload.Offset, payload.TotalSize, data, payload.CreateDirs, payload.Final)
+	return writeProjectFileUploadChunkStream(payload.Workdir, payload.Path, payload.UploadID, payload.Offset, payload.TotalSize, payload.ChunkBytes, data, payload.CreateDirs, payload.Final)
 }
 
 func (a *Agent) lockProjectFileUpload(workdir, path, uploadID string) func() {

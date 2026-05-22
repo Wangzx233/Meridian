@@ -639,7 +639,7 @@ Rules:
 - Resumable browser uploads use the tus 1.0 protocol subset implemented at
   `/files/upload/tus`. The web UI uses `tus-js-client`, creates an upload with
   `POST`, resumes with `HEAD`, and sends binary `PATCH` chunks with
-  `Upload-Offset`. Each PATCH body is limited to 8 MiB. The control plane then
+  `Upload-Offset`. Each PATCH body is limited to 4 MiB. The control plane then
   forwards each chunk to the runner using the `project.file.upload.chunk`
   message described below.
 - Parallel tus uploads are not enabled yet because tus-js-client requires the

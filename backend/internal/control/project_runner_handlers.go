@@ -20,7 +20,7 @@ import (
 
 const (
 	maxProjectFileLegacyUploadBytes int64 = 5 * 1024 * 1024
-	maxProjectFileUploadChunkBytes  int64 = 8 * 1024 * 1024
+	maxProjectFileUploadChunkBytes  int64 = 4 * 1024 * 1024
 )
 
 func (a *API) handleProjectFiles(w http.ResponseWriter, r *http.Request, projectID string) {
@@ -151,7 +151,6 @@ func (a *API) handleProjectFileTusCollection(w http.ResponseWriter, r *http.Requ
 	case http.MethodOptions:
 		w.Header().Set("Tus-Version", "1.0.0")
 		w.Header().Set("Tus-Extension", "creation")
-		w.Header().Set("Tus-Max-Size", strconv.FormatInt(maxProjectFileUploadChunkBytes, 10))
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodPost:
 		_, _, ok := a.projectAndServerForRunnerRequest(w, r, projectID, "project_file_upload_chunked")
@@ -450,7 +449,7 @@ func (a *API) requestProjectFileUploadChunk(w http.ResponseWriter, r *http.Reque
 		ContentBase64: base64.StdEncoding.EncodeToString(data),
 		CreateDirs:    createDirs,
 		Final:         final,
-	}, 30*time.Second)
+	}, 2*time.Minute)
 	if err != nil {
 		a.respondRunnerRequestError(w, server.RunnerID, "project file upload chunk request", err)
 		return ProjectFileActionResult{}, false

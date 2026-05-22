@@ -44,16 +44,23 @@ type Envelope struct {
 }
 
 type Agent struct {
-	cfg      Config
-	logger   *slog.Logger
-	conn     *websocket.Conn
-	mu       sync.Mutex
-	active   map[string]context.CancelFunc
-	shutdown ShutdownFunc
-	stopping bool
+	cfg           Config
+	logger        *slog.Logger
+	conn          *websocket.Conn
+	mu            sync.Mutex
+	active        map[string]context.CancelFunc
+	shutdown      ShutdownFunc
+	stopping      bool
+	uploadLocksMu sync.Mutex
+	uploadLocks   map[string]*uploadLockState
 }
 
 var errRunnerNotConnected = errors.New("runner websocket is not connected")
+
+type uploadLockState struct {
+	mu   sync.Mutex
+	refs int
+}
 
 func New(cfg Config, logger *slog.Logger) *Agent {
 	if logger == nil {
@@ -71,7 +78,7 @@ func New(cfg Config, logger *slog.Logger) *Agent {
 	if cfg.CompactTimeout == 0 {
 		cfg.CompactTimeout = 5 * time.Minute
 	}
-	return &Agent{cfg: cfg, logger: logger, active: map[string]context.CancelFunc{}, shutdown: defaultShutdown}
+	return &Agent{cfg: cfg, logger: logger, active: map[string]context.CancelFunc{}, shutdown: defaultShutdown, uploadLocks: map[string]*uploadLockState{}}
 }
 
 func (a *Agent) SetShutdownFunc(fn ShutdownFunc) {
@@ -254,27 +261,7 @@ func (a *Agent) runOnce(ctx context.Context) (bool, error) {
 			}
 			_ = a.sendResponse("project.file.upload.status.response", env.MessageID, projectFileUploadStatus(payload.Workdir, payload.Path, payload.UploadID, payload.TotalSize))
 		case "project.file.upload.chunk":
-			var payload struct {
-				Workdir       string `json:"workdir"`
-				Path          string `json:"path"`
-				UploadID      string `json:"upload_id"`
-				Offset        int64  `json:"offset"`
-				TotalSize     int64  `json:"total_size"`
-				ContentBase64 string `json:"content_base64"`
-				CreateDirs    bool   `json:"create_dirs"`
-				Final         bool   `json:"final"`
-			}
-			if err := json.Unmarshal(env.Payload, &payload); err != nil {
-				a.logger.Warn("invalid project.file.upload.chunk", "error", err)
-				continue
-			}
-			content, err := base64.StdEncoding.DecodeString(payload.ContentBase64)
-			if err != nil {
-				msg := "invalid base64 file content"
-				_ = a.sendResponse("project.file.upload.chunk.response", env.MessageID, ProjectFileActionResult{Path: payload.Path, TotalSize: payload.TotalSize, ResumeOffset: payload.Offset, Error: &msg})
-				continue
-			}
-			_ = a.sendResponse("project.file.upload.chunk.response", env.MessageID, writeProjectFileUploadChunk(payload.Workdir, payload.Path, payload.UploadID, payload.Offset, payload.TotalSize, content, payload.CreateDirs, payload.Final))
+			go a.handleProjectFileUploadChunk(env.MessageID, env.Payload)
 		case "project.file.action":
 			var payload struct {
 				Workdir    string `json:"workdir"`
@@ -558,6 +545,55 @@ func (a *Agent) execute(agentCtx, runCtx context.Context, assign Assignment) {
 		result.ErrorMessage = &msg
 	}
 	a.sendRunCompleted(agentCtx, assign.RunID, result)
+}
+
+func (a *Agent) handleProjectFileUploadChunk(messageID string, raw json.RawMessage) {
+	var payload struct {
+		Workdir       string `json:"workdir"`
+		Path          string `json:"path"`
+		UploadID      string `json:"upload_id"`
+		Offset        int64  `json:"offset"`
+		TotalSize     int64  `json:"total_size"`
+		ContentBase64 string `json:"content_base64"`
+		CreateDirs    bool   `json:"create_dirs"`
+		Final         bool   `json:"final"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		a.logger.Warn("invalid project.file.upload.chunk", "error", err)
+		return
+	}
+	content, err := base64.StdEncoding.DecodeString(payload.ContentBase64)
+	if err != nil {
+		msg := "invalid base64 file content"
+		_ = a.sendResponse("project.file.upload.chunk.response", messageID, ProjectFileActionResult{Path: payload.Path, TotalSize: payload.TotalSize, ResumeOffset: payload.Offset, Error: &msg})
+		return
+	}
+	unlock := a.lockProjectFileUpload(payload.Workdir, payload.Path, payload.UploadID)
+	defer unlock()
+	_ = a.sendResponse("project.file.upload.chunk.response", messageID, writeProjectFileUploadChunk(payload.Workdir, payload.Path, payload.UploadID, payload.Offset, payload.TotalSize, content, payload.CreateDirs, payload.Final))
+}
+
+func (a *Agent) lockProjectFileUpload(workdir, path, uploadID string) func() {
+	key := workdir + "\x00" + path + "\x00" + uploadID
+	a.uploadLocksMu.Lock()
+	state := a.uploadLocks[key]
+	if state == nil {
+		state = &uploadLockState{}
+		a.uploadLocks[key] = state
+	}
+	state.refs++
+	a.uploadLocksMu.Unlock()
+
+	state.mu.Lock()
+	return func() {
+		state.mu.Unlock()
+		a.uploadLocksMu.Lock()
+		state.refs--
+		if state.refs == 0 {
+			delete(a.uploadLocks, key)
+		}
+		a.uploadLocksMu.Unlock()
+	}
 }
 
 func (a *Agent) sendRunCompleted(ctx context.Context, runID string, result RunResult) {

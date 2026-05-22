@@ -492,6 +492,22 @@ func TestWriteProjectFileUploadChunkSupportsEmptyFile(t *testing.T) {
 	}
 }
 
+func TestProjectFileUploadStatusDetectsCompletedTarget(t *testing.T) {
+	root := t.TempDir()
+	content := []byte("already complete")
+	if err := os.WriteFile(filepath.Join(root, "done.bin"), content, 0o644); err != nil {
+		t.Fatalf("write completed target: %v", err)
+	}
+
+	status := projectFileUploadStatus(root, "done.bin", "upload-done", int64(len(content)))
+	if status.Error != nil {
+		t.Fatalf("upload status error = %v", *status.Error)
+	}
+	if !status.Complete || status.ResumeOffset != int64(len(content)) || status.UploadedBytes != int64(len(content)) {
+		t.Fatalf("status = %#v, want completed target offset", status)
+	}
+}
+
 func TestProjectFileActionsStayInsideWorkdir(t *testing.T) {
 	root := t.TempDir()
 	created := createProjectFileEntry(root, "notes/todo.txt", false)

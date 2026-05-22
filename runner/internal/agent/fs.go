@@ -276,6 +276,18 @@ func projectFileUploadStatus(root, path, uploadID string, totalSize int64) Proje
 			msg := "path is a directory"
 			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
 		}
+		if info.Size() == totalSize {
+			return ProjectFileActionResult{
+				Root:          cleanRoot,
+				Path:          relPath,
+				Size:          info.Size(),
+				UploadedBytes: info.Size(),
+				TotalSize:     totalSize,
+				Complete:      true,
+				ResumeOffset:  info.Size(),
+				ModifiedAt:    ptrTime(info.ModTime()),
+			}
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		msg := err.Error()
 		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}

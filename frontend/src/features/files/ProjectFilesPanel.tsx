@@ -78,6 +78,7 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
   const [saveError, setSaveError] = useState<unknown>(null);
   const [uploadError, setUploadError] = useState<unknown>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const handledUploadResultsRef = useRef<Set<string>>(new Set());
   const allUploadProgress = useSyncExternalStore(
     subscribeProjectFileUploads,
     projectFileUploadSnapshot,
@@ -147,6 +148,7 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
     setActionError(null);
     setSaveError(null);
     setUploadError(null);
+    handledUploadResultsRef.current.clear();
   }, [props.project.id]);
 
   useEffect(() => {
@@ -208,11 +210,24 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
   };
 
   useEffect(() => {
-    for (const upload of uploadProgress) {
+    const handled = handledUploadResultsRef.current;
+    for (const upload of allUploadProgress) {
+      if (upload.projectId !== props.project.id) {
+        continue;
+      }
+      if (!upload.complete && !upload.error) {
+        handled.delete(upload.id);
+        continue;
+      }
+      if (handled.has(upload.id)) {
+        continue;
+      }
       if (upload.error) {
+        handled.add(upload.id);
         setUploadError(upload.error);
       }
       if (upload.complete && upload.result) {
+        handled.add(upload.id);
         const parent = parentDirectory(upload.result.path);
         setUploadError(null);
         setPath(parent);
@@ -220,10 +235,9 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
         void queryClient.invalidateQueries({ queryKey: ["project-files", props.project.id] });
         void queryClient.invalidateQueries({ queryKey: ["project-files", props.project.id, parent] });
         void queryClient.invalidateQueries({ queryKey: ["project-file-content", props.project.id, upload.result.path] });
-        clearCompletedProjectFileUpload(upload.id);
       }
     }
-  }, [props.project.id, queryClient, uploadProgress]);
+  }, [props.project.id, queryClient, allUploadProgress]);
 
   return (
     <section className="filesPanel" aria-label="Project files">
@@ -296,10 +310,17 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
           <span className="uploadNoticeContent">
             <span>
               Uploading {upload.filename}: {formatBytes(upload.uploadedBytes)} / {formatBytes(upload.totalBytes)}
+              {upload.sentBytes > upload.uploadedBytes ? ` sent ${formatBytes(upload.sentBytes)}` : ""}
               {upload.resumed ? " resumed" : ""}
+              {upload.complete ? " complete" : ""}
               {upload.error ? ` - ${errorNotice(upload.error, "Unable to upload file.").message}` : ""}
             </span>
             <progress value={upload.totalBytes > 0 ? upload.uploadedBytes : 1} max={upload.totalBytes > 0 ? upload.totalBytes : 1} />
+            {(upload.complete || upload.error) ? (
+              <button className="ghostButton compact" type="button" onClick={() => clearCompletedProjectFileUpload(upload.id)}>
+                Dismiss
+              </button>
+            ) : null}
           </span>
         </InlineNotice>
       ))}

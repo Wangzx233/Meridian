@@ -2,7 +2,7 @@ import { Upload } from "tus-js-client";
 import { apiBaseUrl, ApiError } from "../../api";
 import type { ProjectFileActionResult } from "../../types";
 
-const uploadChunkBytes = 8 * 1024 * 1024;
+const uploadChunkBytes = 4 * 1024 * 1024;
 
 export type ProjectFileUploadProgress = {
   id: string;
@@ -11,6 +11,7 @@ export type ProjectFileUploadProgress = {
   filename: string;
   uploadedBytes: number;
   totalBytes: number;
+  sentBytes: number;
   complete: boolean;
   resumed: boolean;
   error: unknown | null;
@@ -69,6 +70,7 @@ export function uploadProjectFile(input: UploadProjectFileInput) {
     directoryPath: input.path,
     filename,
     uploadedBytes: 0,
+    sentBytes: 0,
     totalBytes: input.file.size,
     complete: false,
     resumed: false,
@@ -92,12 +94,19 @@ export function uploadProjectFile(input: UploadProjectFileInput) {
     },
     onProgress(uploadedBytes, totalBytes) {
       updateUpload(id, {
-        uploadedBytes,
+        sentBytes: uploadedBytes,
         totalBytes,
-        resumed: uploadedBytes > 0,
       });
     },
     onAfterResponse(_req, res) {
+      const offset = parseUploadOffset(res.getHeader("Upload-Offset"));
+      if (offset !== null) {
+        updateUpload(id, {
+          uploadedBytes: Math.min(offset, input.file.size),
+          totalBytes: input.file.size,
+          resumed: offset > 0,
+        });
+      }
       const info = res.getHeader("Upload-Info");
       if (!info) {
         return;
@@ -114,6 +123,7 @@ export function uploadProjectFile(input: UploadProjectFileInput) {
       const current = uploads.get(id);
       updateUpload(id, {
         uploadedBytes: input.file.size,
+        sentBytes: input.file.size,
         totalBytes: input.file.size,
         complete: true,
         error: null,
@@ -167,6 +177,14 @@ function decodeUploadInfo(value: string): ProjectFileActionResult | null {
   } catch {
     return null;
   }
+}
+
+function parseUploadOffset(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function base64UrlToBase64(value: string) {

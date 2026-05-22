@@ -39,12 +39,44 @@ func TestRunnerUpdateTrackerTracksReconnectSuccess(t *testing.T) {
 	}
 }
 
+func TestRunnerUpdateTrackerAcceptsShortHashReconnect(t *testing.T) {
+	tracker := NewRunnerUpdateTracker()
+	now := time.Date(2026, 5, 22, 8, 0, 0, 0, time.UTC)
+	tracker.Begin("a48beb99d2c21636e", now)
+	tracker.Upsert(RunnerUpdateProgressResult{ServerName: "desktop", RunnerID: "runner_desktop", Status: "accepted", UpdatedAt: now}, now)
+	tracker.MarkRegistered("runner_desktop", RunnerInfo{Version: "a48beb9"}, now.Add(time.Second))
+
+	latest := tracker.Latest(now.Add(2 * time.Second))
+	if latest.Active || latest.Succeeded != 1 || latest.Failed != 0 {
+		t.Fatalf("counts = %#v", latest)
+	}
+	if latest.Results[0].Status != "succeeded" || latest.Results[0].Error != nil {
+		t.Fatalf("result = %#v", latest.Results[0])
+	}
+}
+
+func TestRunnerUpdateTrackerMarksUncomparableReconnectVersionMismatch(t *testing.T) {
+	tracker := NewRunnerUpdateTracker()
+	now := time.Date(2026, 5, 22, 8, 0, 0, 0, time.UTC)
+	tracker.Begin("a48beb99d2c21636e", now)
+	tracker.Upsert(RunnerUpdateProgressResult{ServerName: "desktop", RunnerID: "runner_desktop", Status: "accepted", UpdatedAt: now}, now)
+	tracker.MarkRegistered("runner_desktop", RunnerInfo{Version: "0.5.0"}, now.Add(time.Second))
+
+	latest := tracker.Latest(now.Add(2 * time.Second))
+	if latest.Active || latest.Failed != 1 {
+		t.Fatalf("counts = %#v", latest)
+	}
+	if latest.Results[0].Status != "version_mismatch" || latest.Results[0].Error == nil {
+		t.Fatalf("result = %#v", latest.Results[0])
+	}
+}
+
 func TestRunnerUpdateTrackerMarksVersionMismatch(t *testing.T) {
 	tracker := NewRunnerUpdateTracker()
 	now := time.Date(2026, 5, 22, 8, 0, 0, 0, time.UTC)
-	tracker.Begin("target", now)
+	tracker.Begin("a48beb99d2c21636e", now)
 	tracker.Upsert(RunnerUpdateProgressResult{ServerName: "desktop", RunnerID: "runner_desktop", Status: "accepted", UpdatedAt: now}, now)
-	tracker.MarkRegistered("runner_desktop", RunnerInfo{Version: "other"}, now.Add(time.Second))
+	tracker.MarkRegistered("runner_desktop", RunnerInfo{Version: "b71b110d2c21636e"}, now.Add(time.Second))
 
 	latest := tracker.Latest(now.Add(2 * time.Second))
 	if latest.Active || latest.Failed != 1 {

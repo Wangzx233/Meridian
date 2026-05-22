@@ -13,11 +13,11 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X codex-task-workbench/bac
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/migrate ./backend/cmd/migrate
 
 RUN mkdir -p /out/artifacts/runner && \
-    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X codex-task-workbench/runner/cmd/runner.RunnerVersion=${BUILD_COMMIT}" -o /out/artifacts/runner/runner-linux-amd64 ./runner/cmd/runner && \
-    GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X codex-task-workbench/runner/cmd/runner.RunnerVersion=${BUILD_COMMIT}" -o /out/artifacts/runner/runner-linux-arm64 ./runner/cmd/runner && \
-    GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X codex-task-workbench/runner/cmd/runner.RunnerVersion=${BUILD_COMMIT}" -o /out/artifacts/runner/runner-darwin-amd64 ./runner/cmd/runner && \
-    GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X codex-task-workbench/runner/cmd/runner.RunnerVersion=${BUILD_COMMIT}" -o /out/artifacts/runner/runner-darwin-arm64 ./runner/cmd/runner && \
-    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X codex-task-workbench/runner/cmd/runner.RunnerVersion=${BUILD_COMMIT}" -o /out/artifacts/runner/runner-windows-amd64.exe ./runner/cmd/runner
+    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.RunnerVersion=${BUILD_COMMIT}" -o /out/artifacts/runner/runner-linux-amd64 ./runner/cmd/runner && \
+    GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.RunnerVersion=${BUILD_COMMIT}" -o /out/artifacts/runner/runner-linux-arm64 ./runner/cmd/runner && \
+    GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.RunnerVersion=${BUILD_COMMIT}" -o /out/artifacts/runner/runner-darwin-amd64 ./runner/cmd/runner && \
+    GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.RunnerVersion=${BUILD_COMMIT}" -o /out/artifacts/runner/runner-darwin-arm64 ./runner/cmd/runner && \
+    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.RunnerVersion=${BUILD_COMMIT}" -o /out/artifacts/runner/runner-windows-amd64.exe ./runner/cmd/runner
 
 FROM alpine:3.21
 

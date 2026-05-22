@@ -117,21 +117,9 @@ func (t *RunnerUpdateTracker) MarkRegistered(runnerID string, info RunnerInfo, n
 		return
 	}
 
-	status := "succeeded"
-	message := "Runner reconnected after update."
-	var updateErr *string
 	targetVersion := strings.TrimSpace(t.latest.TargetVersion)
 	currentVersion := strings.TrimSpace(info.Version)
-	if targetVersion != "" && targetVersion != "dev" {
-		if currentVersion == targetVersion {
-			message = "Runner reconnected with the target version."
-		} else {
-			status = "version_mismatch"
-			msg := "Runner reconnected, but it is not running the target version."
-			message = msg
-			updateErr = &msg
-		}
-	}
+	status, message, updateErr := runnerUpdateReconnectResult(targetVersion, currentVersion)
 	completedAt := now
 	result := RunnerUpdateProgressResult{
 		RunnerID:       runnerID,
@@ -346,6 +334,74 @@ func runnerUpdateStatusInProgress(status string) bool {
 
 func runnerUpdateStatusTerminal(status string) bool {
 	return runnerUpdateStatusSucceeded(status) || runnerUpdateStatusFailed(status) || status == "skipped"
+}
+
+func runnerUpdateReconnectResult(targetVersion, currentVersion string) (string, string, *string) {
+	targetVersion = strings.TrimSpace(targetVersion)
+	currentVersion = strings.TrimSpace(currentVersion)
+	if targetVersion == "" || targetVersion == "dev" {
+		return "succeeded", "Runner reconnected after update.", nil
+	}
+	if runnerUpdateVersionsMatch(targetVersion, currentVersion) {
+		return "succeeded", "Runner reconnected with the target version.", nil
+	}
+	if currentVersion == "" {
+		msg := "Runner reconnected without reporting a version, expected " + targetVersion + "."
+		return "version_mismatch", msg, &msg
+	}
+	if !runnerUpdateVersionsComparable(targetVersion, currentVersion) {
+		msg := "Runner reconnected with version " + currentVersion + ", which cannot be compared with expected version " + targetVersion + "."
+		return "version_mismatch", msg, &msg
+	}
+
+	msg := "Runner reconnected with version " + currentVersion + ", expected " + targetVersion + "."
+	return "version_mismatch", msg, &msg
+}
+
+func runnerUpdateVersionsMatch(targetVersion, currentVersion string) bool {
+	targetVersion = strings.TrimSpace(targetVersion)
+	currentVersion = strings.TrimSpace(currentVersion)
+	if targetVersion == "" || currentVersion == "" {
+		return false
+	}
+	if targetVersion == currentVersion {
+		return true
+	}
+	if runnerUpdateLooksLikeGitVersion(targetVersion) && runnerUpdateLooksLikeGitVersion(currentVersion) {
+		return strings.HasPrefix(targetVersion, currentVersion) || strings.HasPrefix(currentVersion, targetVersion)
+	}
+	return false
+}
+
+func runnerUpdateVersionsComparable(targetVersion, currentVersion string) bool {
+	targetVersion = strings.TrimSpace(targetVersion)
+	currentVersion = strings.TrimSpace(currentVersion)
+	if targetVersion == "" || currentVersion == "" {
+		return false
+	}
+	targetIsGitVersion := runnerUpdateLooksLikeGitVersion(targetVersion)
+	currentIsGitVersion := runnerUpdateLooksLikeGitVersion(currentVersion)
+	if targetIsGitVersion || currentIsGitVersion {
+		return targetIsGitVersion && currentIsGitVersion
+	}
+	return true
+}
+
+func runnerUpdateLooksLikeGitVersion(version string) bool {
+	version = strings.TrimSpace(version)
+	if len(version) < 7 || len(version) > 40 {
+		return false
+	}
+	for _, ch := range version {
+		switch {
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		case ch >= 'A' && ch <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func runnerUpdateDefaultMessage(status string) string {

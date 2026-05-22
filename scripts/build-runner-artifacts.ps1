@@ -49,7 +49,7 @@ try {
     $env:CGO_ENABLED = "0"
     $out = Join-Path $artifactDir $target.Output
     Write-Host "Building $($target.GOOS)/$($target.GOARCH) -> $out"
-    & $GoExe build -trimpath -ldflags="-s -w -X codex-task-workbench/runner/cmd/runner.RunnerVersion=$RunnerVersion" -o $out .\runner\cmd\runner
+    & $GoExe build -trimpath -ldflags="-s -w -X main.RunnerVersion=$RunnerVersion" -o $out .\runner\cmd\runner
   }
 }
 finally {

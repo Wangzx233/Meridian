@@ -18,7 +18,7 @@ build_runner() {
     cd "$repo_root"
     GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 "$go_exe" build \
       -trimpath \
-      -ldflags="-s -w -X codex-task-workbench/runner/cmd/runner.RunnerVersion=$runner_version" \
+      -ldflags="-s -w -X main.RunnerVersion=$runner_version" \
       -o "$artifact_dir/$output" \
       ./runner/cmd/runner
   )

@@ -515,6 +515,9 @@ Runner update rules:
   status messages. The control plane also infers `waiting_reconnect` on
   websocket disconnect and `succeeded` or `version_mismatch` when the runner
   reconnects.
+- Reconnect verification accepts matching full or short commit hashes. A runner
+  that reconnects with missing, older semantic, or otherwise non-matching
+  version metadata is reported as `version_mismatch`.
 - Runners that accepted the request but never report completion are marked
   `timed_out` after the progress deadline.
 

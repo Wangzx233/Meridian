@@ -700,6 +700,9 @@ Rules:
   browser file into `path` under the project workdir, and preserves binary
   bytes. The runner stores unfinished chunks in a hidden `.part` file beside the
   target and replaces the target only after the final chunk is complete.
+- Stopping an in-progress upload from the web UI aborts the browser tus request
+  but does not delete the partial upload. Re-selecting the same file can resume
+  from the confirmed offset while the partial file remains available.
 - The endpoint still accepts the older one-shot JSON or multipart upload shape
   for compatibility with existing clients and runners. That compatibility path
   requires `project_file_upload` and rejects uploads above 5 MiB.

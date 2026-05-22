@@ -47,6 +47,7 @@ import { runnerCapabilityBlockedReason, runnerCapabilityPillLabel } from "../../
 import { CapabilityPill, EmptyState, ErrorState, InlineNotice, LoadingState } from "../../shared/ui";
 import { errorNotice } from "../../shared/notices";
 import {
+  cancelProjectFileUpload,
   clearCompletedProjectFileUpload,
   projectFileUploadSnapshot,
   subscribeProjectFileUploads,
@@ -215,7 +216,7 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
       if (upload.projectId !== props.project.id) {
         continue;
       }
-      if (!upload.complete && !upload.error) {
+      if (!upload.complete && !upload.error && !upload.canceled) {
         handled.delete(upload.id);
         continue;
       }
@@ -225,6 +226,10 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
       if (upload.error) {
         handled.add(upload.id);
         setUploadError(upload.error);
+      }
+      if (upload.canceled) {
+        handled.add(upload.id);
+        setUploadError(null);
       }
       if (upload.complete && upload.result) {
         handled.add(upload.id);
@@ -314,14 +319,20 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
               {upload.proxyLimited ? " proxy limit detected, using smaller chunks" : ""}
               {upload.resumed ? " resumed" : ""}
               {upload.complete ? " complete" : ""}
+              {upload.canceled ? " canceled" : ""}
               {upload.error ? ` - ${errorNotice(upload.error, "Unable to upload file.").message}` : ""}
             </span>
             <progress value={upload.totalBytes > 0 ? Math.max(upload.uploadedBytes, upload.sentBytes) : 1} max={upload.totalBytes > 0 ? upload.totalBytes : 1} />
-            {(upload.complete || upload.error) ? (
+            {!upload.complete && !upload.error && !upload.canceled ? (
+              <button className="cancelButton inline" type="button" onClick={() => cancelProjectFileUpload(upload.id)}>
+                <Square size={14} />
+                Stop
+              </button>
+            ) : (
               <button className="ghostButton compact" type="button" onClick={() => clearCompletedProjectFileUpload(upload.id)}>
                 Dismiss
               </button>
-            ) : null}
+            )}
           </span>
         </InlineNotice>
       ))}

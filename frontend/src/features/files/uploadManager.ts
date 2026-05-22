@@ -17,6 +17,7 @@ export type ProjectFileUploadProgress = {
   complete: boolean;
   resumed: boolean;
   proxyLimited: boolean;
+  canceled: boolean;
   error: unknown | null;
   result: ProjectFileActionResult | null;
 };
@@ -32,6 +33,8 @@ type UploadProjectFileInput = {
 type Listener = () => void;
 
 const uploads = new Map<string, ProjectFileUploadProgress>();
+const activeUploads = new Map<string, Upload>();
+const canceledUploads = new Set<string>();
 const listeners = new Set<Listener>();
 let uploadSnapshot: ProjectFileUploadProgress[] = [];
 
@@ -53,20 +56,42 @@ export function projectFileUploadSnapshot() {
 
 export function clearCompletedProjectFileUpload(id: string) {
   const upload = uploads.get(id);
-  if (!upload || (!upload.complete && !upload.error)) {
+  if (!upload || (!upload.complete && !upload.error && !upload.canceled)) {
     return;
   }
+  activeUploads.delete(id);
+  canceledUploads.delete(id);
   uploads.delete(id);
   notify();
+}
+
+export function cancelProjectFileUpload(id: string) {
+  const current = uploads.get(id);
+  if (!current || current.complete || current.error) {
+    return;
+  }
+  canceledUploads.add(id);
+  const active = activeUploads.get(id);
+  activeUploads.delete(id);
+  if (active) {
+    void active.abort(false).catch(() => undefined);
+  }
+  updateUpload(id, {
+    canceled: true,
+    error: null,
+    sentBytes: current.uploadedBytes,
+  });
 }
 
 export function uploadProjectFile(input: UploadProjectFileInput) {
   const filename = input.file.name || "upload.bin";
   const id = uploadIDForFile(input.projectId, input.path, input.file);
   const existing = uploads.get(id);
-  if (existing && !existing.complete && !existing.error) {
+  if (existing && !existing.complete && !existing.error && !existing.canceled) {
     return existing;
   }
+  activeUploads.delete(id);
+  canceledUploads.delete(id);
 
   const initial: ProjectFileUploadProgress = {
     id,
@@ -79,6 +104,7 @@ export function uploadProjectFile(input: UploadProjectFileInput) {
     complete: false,
     resumed: false,
     proxyLimited: false,
+    canceled: false,
     error: null,
     result: null,
   };
@@ -102,6 +128,9 @@ export function uploadProjectFile(input: UploadProjectFileInput) {
     resume_offset: input.file.size,
   });
   const startUpload = (chunkSize: number, proxyLimited: boolean, uploadUrl?: string | null) => {
+    if (canceledUploads.has(id)) {
+      return;
+    }
     let uploadUrlForRetry = uploadUrl ?? null;
     const upload = new Upload(input.file, {
       endpoint,
@@ -145,6 +174,10 @@ export function uploadProjectFile(input: UploadProjectFileInput) {
         }
       },
       onError(error) {
+        activeUploads.delete(id);
+        if (canceledUploads.has(id)) {
+          return;
+        }
         if (!proxyLimited && chunkSize > proxySafeUploadChunkBytes && isRequestEntityTooLarge(error)) {
           const current = uploads.get(id);
           const resumeOffset = current?.uploadedBytes ?? 0;
@@ -160,6 +193,8 @@ export function uploadProjectFile(input: UploadProjectFileInput) {
         updateUpload(id, { error: normalizeTusError(error) });
       },
       onSuccess() {
+        activeUploads.delete(id);
+        canceledUploads.delete(id);
         const current = uploads.get(id);
         updateUpload(id, {
           uploadedBytes: input.file.size,
@@ -171,18 +206,33 @@ export function uploadProjectFile(input: UploadProjectFileInput) {
         });
       },
     });
-    const start = () => upload.start();
+    activeUploads.set(id, upload);
+    const start = () => {
+      if (canceledUploads.has(id)) {
+        activeUploads.delete(id);
+        return;
+      }
+      upload.start();
+    };
     if (uploadUrl) {
       start();
       return;
     }
     upload.findPreviousUploads().then((previousUploads) => {
+      if (canceledUploads.has(id)) {
+        activeUploads.delete(id);
+        return;
+      }
       if (previousUploads.length > 0) {
         upload.resumeFromPreviousUpload(previousUploads[0]);
         updateUpload(id, { resumed: true });
       }
       start();
     }).catch((error) => {
+      activeUploads.delete(id);
+      if (canceledUploads.has(id)) {
+        return;
+      }
       updateUpload(id, { error: normalizeTusError(error) });
     });
   };

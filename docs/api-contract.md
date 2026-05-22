@@ -506,6 +506,9 @@ GET  /api/v1/projects/{project_id}/files/content?path={relative_project_path}
 PUT  /api/v1/projects/{project_id}/files/content
 GET  /api/v1/projects/{project_id}/files/upload?path={dir}&filename={name}&upload_id={id}&total_size={bytes}
 POST /api/v1/projects/{project_id}/files/upload
+POST /api/v1/projects/{project_id}/files/upload/tus
+HEAD /api/v1/projects/{project_id}/files/upload/tus/{upload_token}
+PATCH /api/v1/projects/{project_id}/files/upload/tus/{upload_token}
 POST /api/v1/projects/{project_id}/files/actions
 WS   /api/v1/projects/{project_id}/terminal
 POST /api/v1/projects/{project_id}/command
@@ -633,14 +636,20 @@ Project file action request:
 Rules:
 
 - File content endpoints require `project_file_io`.
-- Resumable file upload requires `project_file_upload_chunked`, writes the
-  selected browser file into `path` under the project workdir, and preserves
-  binary bytes. The browser first calls `GET /files/upload` to read the runner's
-  partial-file offset, then sends base64-encoded chunks to `POST /files/upload`
-  with the same `upload_id`, absolute byte `offset`, `total_size`, and `final`.
-  Each chunk is limited to 1 MiB of decoded file content. The runner stores
-  unfinished chunks in a hidden `.part` file beside the target and replaces the
-  target only after the final chunk is complete.
+- Resumable browser uploads use the tus 1.0 protocol subset implemented at
+  `/files/upload/tus`. The web UI uses `tus-js-client`, creates an upload with
+  `POST`, resumes with `HEAD`, and sends binary `PATCH` chunks with
+  `Upload-Offset`. Each PATCH body is limited to 8 MiB. The control plane then
+  forwards each chunk to the runner using the `project.file.upload.chunk`
+  message described below.
+- Parallel tus uploads are not enabled yet because tus-js-client requires the
+  tus Concatenation extension for that mode. Enabling it would require separate
+  partial upload resources plus a runner-side concat step before replacing the
+  final target file.
+- Resumable upload requires `project_file_upload_chunked`, writes the selected
+  browser file into `path` under the project workdir, and preserves binary
+  bytes. The runner stores unfinished chunks in a hidden `.part` file beside the
+  target and replaces the target only after the final chunk is complete.
 - The endpoint still accepts the older one-shot JSON or multipart upload shape
   for compatibility with existing clients and runners. That compatibility path
   requires `project_file_upload` and rejects uploads above 5 MiB.

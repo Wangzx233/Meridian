@@ -3121,6 +3121,17 @@ textarea:disabled {
   color: var(--danger);
 }
 
+.uploadNoticeContent {
+  display: grid;
+  gap: 6px;
+}
+
+.uploadNoticeContent progress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--accent);
+}
+
 .toast {
   position: fixed;
   z-index: 20;

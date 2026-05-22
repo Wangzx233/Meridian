@@ -5,8 +5,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -18,7 +20,7 @@ import (
 
 const (
 	maxProjectFileLegacyUploadBytes int64 = 5 * 1024 * 1024
-	maxProjectFileUploadChunkBytes  int64 = 1024 * 1024
+	maxProjectFileUploadChunkBytes  int64 = 8 * 1024 * 1024
 )
 
 func (a *API) handleProjectFiles(w http.ResponseWriter, r *http.Request, projectID string) {
@@ -52,16 +54,36 @@ func (a *API) handleProjectFiles(w http.ResponseWriter, r *http.Request, project
 }
 
 func (a *API) handleProjectFileRoutes(w http.ResponseWriter, r *http.Request, projectID string, parts []string) {
-	if len(parts) != 1 {
+	if len(parts) == 0 {
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found.", nil)
 		return
 	}
 	switch parts[0] {
 	case "content":
+		if len(parts) != 1 {
+			writeError(w, http.StatusNotFound, "not_found", "Resource not found.", nil)
+			return
+		}
 		a.handleProjectFileContent(w, r, projectID)
 	case "upload":
-		a.handleProjectFileUpload(w, r, projectID)
+		if len(parts) == 1 {
+			a.handleProjectFileUpload(w, r, projectID)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "tus" {
+			a.handleProjectFileTusCollection(w, r, projectID)
+			return
+		}
+		if len(parts) == 3 && parts[1] == "tus" {
+			a.handleProjectFileTusResource(w, r, projectID, parts[2])
+			return
+		}
+		writeError(w, http.StatusNotFound, "not_found", "Resource not found.", nil)
 	case "actions":
+		if len(parts) != 1 {
+			writeError(w, http.StatusNotFound, "not_found", "Resource not found.", nil)
+			return
+		}
 		a.handleProjectFileAction(w, r, projectID)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found.", nil)
@@ -121,6 +143,131 @@ func (a *API) handleProjectFileUpload(w http.ResponseWriter, r *http.Request, pr
 		return
 	}
 	a.forwardProjectFileUpload(w, r, projectID, uploadTargetPath(targetDir, filename), data, createDirs)
+}
+
+func (a *API) handleProjectFileTusCollection(w http.ResponseWriter, r *http.Request, projectID string) {
+	setTusHeaders(w)
+	switch r.Method {
+	case http.MethodOptions:
+		w.Header().Set("Tus-Version", "1.0.0")
+		w.Header().Set("Tus-Extension", "creation")
+		w.Header().Set("Tus-Max-Size", strconv.FormatInt(maxProjectFileUploadChunkBytes, 10))
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodPost:
+		_, _, ok := a.projectAndServerForRunnerRequest(w, r, projectID, "project_file_upload_chunked")
+		if !ok {
+			return
+		}
+		totalSize, ok := parseNonNegativeInt64(r.Header.Get("Upload-Length"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "validation_error", "Upload-Length must be a non-negative integer.", nil)
+			return
+		}
+		metadata, err := parseTusMetadata(r.Header.Get("Upload-Metadata"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation_error", "Invalid Upload-Metadata header.", nil)
+			return
+		}
+		filename := uploadFilename(metadata["filename"])
+		if filename == "" {
+			writeError(w, http.StatusBadRequest, "validation_error", "filename metadata is required.", nil)
+			return
+		}
+		uploadID := strings.TrimSpace(metadata["upload_id"])
+		if uploadID == "" {
+			writeError(w, http.StatusBadRequest, "validation_error", "upload_id metadata is required.", nil)
+			return
+		}
+		createDirs := !strings.EqualFold(strings.TrimSpace(metadata["create_dirs"]), "false")
+		token := projectFileTusToken{
+			ProjectID:  projectID,
+			Path:       uploadTargetPath(metadata["path"], filename),
+			UploadID:   uploadID,
+			TotalSize:  totalSize,
+			CreateDirs: createDirs,
+		}
+		if totalSize == 0 {
+			result, ok := a.requestProjectFileUploadChunk(w, r, projectID, token.Path, token.UploadID, 0, 0, nil, token.CreateDirs, true)
+			if !ok {
+				return
+			}
+			w.Header().Set("Upload-Info", encodeTusUploadInfo(result))
+		}
+		encoded, err := encodeProjectFileTusToken(token)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Unable to create upload.", nil)
+			return
+		}
+		w.Header().Set("Location", "/api/v1/projects/"+url.PathEscape(projectID)+"/files/upload/tus/"+encoded)
+		w.Header().Set("Upload-Offset", "0")
+		w.WriteHeader(http.StatusCreated)
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (a *API) handleProjectFileTusResource(w http.ResponseWriter, r *http.Request, projectID, rawToken string) {
+	setTusHeaders(w)
+	token, err := decodeProjectFileTusToken(rawToken)
+	if err != nil || token.ProjectID != projectID {
+		writeError(w, http.StatusNotFound, "not_found", "Upload was not found.", nil)
+		return
+	}
+	switch r.Method {
+	case http.MethodHead:
+		result, ok := a.requestProjectFileUploadStatus(w, r, projectID, token.Path, token.UploadID, token.TotalSize)
+		if !ok {
+			return
+		}
+		offset := result.ResumeOffset
+		if result.Complete {
+			offset = token.TotalSize
+		}
+		w.Header().Set("Upload-Offset", strconv.FormatInt(offset, 10))
+		w.Header().Set("Upload-Length", strconv.FormatInt(token.TotalSize, 10))
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodPatch:
+		contentType := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("Content-Type"), ";")[0]))
+		if contentType != "application/offset+octet-stream" {
+			writeError(w, http.StatusUnsupportedMediaType, "validation_error", "PATCH uploads must use application/offset+octet-stream.", nil)
+			return
+		}
+		offset, ok := parseNonNegativeInt64(r.Header.Get("Upload-Offset"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "validation_error", "Upload-Offset must be a non-negative integer.", nil)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxProjectFileUploadChunkBytes+1)
+		data, err := io.ReadAll(io.LimitReader(r.Body, maxProjectFileUploadChunkBytes+1))
+		if closeErr := r.Body.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation_error", "Unable to read upload chunk.", nil)
+			return
+		}
+		if int64(len(data)) > maxProjectFileUploadChunkBytes {
+			writeError(w, http.StatusRequestEntityTooLarge, "validation_error", "Upload chunk is too large.", nil)
+			return
+		}
+		final := offset+int64(len(data)) == token.TotalSize
+		result, ok := a.requestProjectFileUploadChunk(w, r, projectID, token.Path, token.UploadID, offset, token.TotalSize, data, token.CreateDirs, final)
+		if !ok {
+			return
+		}
+		nextOffset := result.ResumeOffset
+		if nextOffset == 0 && result.UploadedBytes > 0 {
+			nextOffset = result.UploadedBytes
+		}
+		w.Header().Set("Upload-Offset", strconv.FormatInt(nextOffset, 10))
+		if result.Complete {
+			w.Header().Set("Upload-Info", encodeTusUploadInfo(result))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		methodNotAllowed(w)
+	}
 }
 
 func (a *API) handleProjectFileUploadStatus(w http.ResponseWriter, r *http.Request, projectID string) {
@@ -249,9 +396,16 @@ func (a *API) forwardProjectFileUpload(w http.ResponseWriter, r *http.Request, p
 }
 
 func (a *API) forwardProjectFileUploadStatus(w http.ResponseWriter, r *http.Request, projectID, targetPath, uploadID string, totalSize int64) {
+	result, ok := a.requestProjectFileUploadStatus(w, r, projectID, targetPath, uploadID, totalSize)
+	if ok {
+		writeJSON(w, http.StatusOK, result)
+	}
+}
+
+func (a *API) requestProjectFileUploadStatus(w http.ResponseWriter, r *http.Request, projectID, targetPath, uploadID string, totalSize int64) (ProjectFileActionResult, bool) {
 	project, server, ok := a.projectAndServerForRunnerRequest(w, r, projectID, "project_file_upload_chunked")
 	if !ok {
-		return
+		return ProjectFileActionResult{}, false
 	}
 	env, err := a.runners.Request(server.RunnerID, "project.file.upload.status", ProjectFileUploadStatusRequestPayload{
 		Workdir:   project.Workdir,
@@ -261,24 +415,31 @@ func (a *API) forwardProjectFileUploadStatus(w http.ResponseWriter, r *http.Requ
 	}, 10*time.Second)
 	if err != nil {
 		a.respondRunnerRequestError(w, server.RunnerID, "project file upload status request", err)
-		return
+		return ProjectFileActionResult{}, false
 	}
 	var result ProjectFileActionResult
 	if !decodeEnvelopePayload(env.Payload, &result, a, "project.file.upload.status.response") {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Invalid runner response.", nil)
-		return
+		return ProjectFileActionResult{}, false
 	}
 	if result.Error != nil {
 		writeError(w, http.StatusBadRequest, "validation_error", *result.Error, nil)
-		return
+		return ProjectFileActionResult{}, false
 	}
-	writeJSON(w, http.StatusOK, result)
+	return result, true
 }
 
 func (a *API) forwardProjectFileUploadChunk(w http.ResponseWriter, r *http.Request, projectID, targetPath, uploadID string, offset, totalSize int64, data []byte, createDirs, final bool) {
+	result, ok := a.requestProjectFileUploadChunk(w, r, projectID, targetPath, uploadID, offset, totalSize, data, createDirs, final)
+	if ok {
+		writeJSON(w, http.StatusOK, result)
+	}
+}
+
+func (a *API) requestProjectFileUploadChunk(w http.ResponseWriter, r *http.Request, projectID, targetPath, uploadID string, offset, totalSize int64, data []byte, createDirs, final bool) (ProjectFileActionResult, bool) {
 	project, server, ok := a.projectAndServerForRunnerRequest(w, r, projectID, "project_file_upload_chunked")
 	if !ok {
-		return
+		return ProjectFileActionResult{}, false
 	}
 	env, err := a.runners.Request(server.RunnerID, "project.file.upload.chunk", ProjectFileUploadChunkRequestPayload{
 		Workdir:       project.Workdir,
@@ -292,18 +453,22 @@ func (a *API) forwardProjectFileUploadChunk(w http.ResponseWriter, r *http.Reque
 	}, 30*time.Second)
 	if err != nil {
 		a.respondRunnerRequestError(w, server.RunnerID, "project file upload chunk request", err)
-		return
+		return ProjectFileActionResult{}, false
 	}
 	var result ProjectFileActionResult
 	if !decodeEnvelopePayload(env.Payload, &result, a, "project.file.upload.chunk.response") {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Invalid runner response.", nil)
-		return
+		return ProjectFileActionResult{}, false
 	}
 	if result.Error != nil {
-		writeError(w, http.StatusBadRequest, "validation_error", *result.Error, nil)
-		return
+		status := http.StatusBadRequest
+		if result.ResumeOffset != offset {
+			status = http.StatusConflict
+		}
+		writeError(w, status, "validation_error", *result.Error, nil)
+		return ProjectFileActionResult{}, false
 	}
-	writeJSON(w, http.StatusOK, result)
+	return result, true
 }
 
 func parseNonNegativeInt64(value string) (int64, bool) {
@@ -313,6 +478,79 @@ func parseNonNegativeInt64(value string) (int64, bool) {
 	}
 	out, err := strconv.ParseInt(value, 10, 64)
 	return out, err == nil && out >= 0
+}
+
+type projectFileTusToken struct {
+	ProjectID  string `json:"project_id"`
+	Path       string `json:"path"`
+	UploadID   string `json:"upload_id"`
+	TotalSize  int64  `json:"total_size"`
+	CreateDirs bool   `json:"create_dirs"`
+}
+
+func encodeProjectFileTusToken(token projectFileTusToken) (string, error) {
+	raw, err := json.Marshal(token)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func decodeProjectFileTusToken(value string) (projectFileTusToken, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(value))
+	if err != nil {
+		return projectFileTusToken{}, err
+	}
+	var token projectFileTusToken
+	if err := json.Unmarshal(raw, &token); err != nil {
+		return projectFileTusToken{}, err
+	}
+	if strings.TrimSpace(token.ProjectID) == "" || strings.TrimSpace(token.Path) == "" || strings.TrimSpace(token.UploadID) == "" || token.TotalSize < 0 {
+		return projectFileTusToken{}, fmt.Errorf("invalid upload token")
+	}
+	return token, nil
+}
+
+func parseTusMetadata(header string) (map[string]string, error) {
+	out := map[string]string{}
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return out, nil
+	}
+	for _, item := range strings.Split(header, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		parts := strings.SplitN(item, " ", 2)
+		key := strings.TrimSpace(parts[0])
+		if key == "" {
+			return nil, fmt.Errorf("empty metadata key")
+		}
+		if len(parts) == 1 {
+			out[key] = ""
+			continue
+		}
+		value, err := base64.StdEncoding.DecodeString(strings.TrimSpace(parts[1]))
+		if err != nil {
+			return nil, err
+		}
+		out[key] = string(value)
+	}
+	return out, nil
+}
+
+func setTusHeaders(w http.ResponseWriter) {
+	w.Header().Set("Tus-Resumable", "1.0.0")
+	w.Header().Set("Access-Control-Expose-Headers", "Location, Tus-Resumable, Upload-Offset, Upload-Length, Upload-Info")
+}
+
+func encodeTusUploadInfo(result ProjectFileActionResult) string {
+	raw, err := json.Marshal(result)
+	if err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
 func uploadFilename(filename string) string {

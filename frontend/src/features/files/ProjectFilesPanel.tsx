@@ -37,16 +37,21 @@ import {
   Zap,
 } from "lucide-react";
 import Editor from "@monaco-editor/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
-import type { ProjectFileUploadProgress } from "../../api";
 import type { Project, ProjectFileContent, ProjectFileEntry, Server } from "../../types";
 import { formatBytes } from "../../shared/format";
 import { runnerCapabilityBlockedReason, runnerCapabilityPillLabel } from "../../shared/runnerCapabilities";
 import { CapabilityPill, EmptyState, ErrorState, InlineNotice, LoadingState } from "../../shared/ui";
 import { errorNotice } from "../../shared/notices";
+import {
+  clearCompletedProjectFileUpload,
+  projectFileUploadSnapshot,
+  subscribeProjectFileUploads,
+  uploadProjectFile,
+} from "./uploadManager";
 
 type FileDialogState =
   | { action: "create_file" | "create_dir"; path: string }
@@ -72,8 +77,13 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
   const [actionError, setActionError] = useState<unknown>(null);
   const [saveError, setSaveError] = useState<unknown>(null);
   const [uploadError, setUploadError] = useState<unknown>(null);
-  const [uploadProgress, setUploadProgress] = useState<ProjectFileUploadProgress | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const allUploadProgress = useSyncExternalStore(
+    subscribeProjectFileUploads,
+    projectFileUploadSnapshot,
+    () => [],
+  );
+  const uploadProgress = allUploadProgress.filter((upload) => upload.projectId === props.project.id);
   const canBrowse = Boolean(props.server?.runner_connected && props.server.runner_capabilities?.project_files === true);
   const canEdit = Boolean(props.server?.runner_connected && props.server.runner_capabilities?.project_file_io === true);
   const canUpload = Boolean(props.server?.runner_connected && props.server.runner_capabilities?.project_file_upload_chunked === true);
@@ -100,27 +110,6 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
       void queryClient.invalidateQueries({ queryKey: ["project-file-content", props.project.id, selectedFilePath] });
     },
     onError: (error) => setSaveError(error),
-  });
-  const uploadMutation = useMutation({
-    mutationFn: (body: { path: string; file: File; create_dirs?: boolean }) =>
-      api.uploadProjectFile(props.project.id, {
-        ...body,
-        onProgress: setUploadProgress,
-      }),
-    onSuccess: (result) => {
-      const parent = parentDirectory(result.path);
-      setUploadError(null);
-      setUploadProgress(null);
-      setPath(parent);
-      setManualPath(parent);
-      void queryClient.invalidateQueries({ queryKey: ["project-files", props.project.id] });
-      void queryClient.invalidateQueries({ queryKey: ["project-files", props.project.id, parent] });
-      void queryClient.invalidateQueries({ queryKey: ["project-file-content", props.project.id, result.path] });
-    },
-    onError: (error) => {
-      setUploadError(error);
-      setUploadProgress(null);
-    },
   });
   const actionMutation = useMutation({
     mutationFn: (body: { action: "create" | "rename" | "delete"; path: string; target_path?: string; is_dir?: boolean }) =>
@@ -158,7 +147,6 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
     setActionError(null);
     setSaveError(null);
     setUploadError(null);
-    setUploadProgress(null);
   }, [props.project.id]);
 
   useEffect(() => {
@@ -170,7 +158,6 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
     setActionError(null);
     setSaveError(null);
     setUploadError(null);
-    setUploadProgress(null);
     if (request.isDir) {
       setPath(request.path);
       setManualPath(request.path);
@@ -213,19 +200,30 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
   };
 
   const uploadFile = (file: File | undefined) => {
-    if (!file || !canUpload || uploadMutation.isPending) {
+    if (!file || !canUpload) {
       return;
     }
     setUploadError(null);
-    setUploadProgress({
-      filename: file.name || "upload.bin",
-      uploadedBytes: 0,
-      totalBytes: file.size,
-      complete: false,
-      resumed: false,
-    });
-    uploadMutation.mutate({ path, file, create_dirs: true });
+    uploadProjectFile({ projectId: props.project.id, path, file, create_dirs: true });
   };
+
+  useEffect(() => {
+    for (const upload of uploadProgress) {
+      if (upload.error) {
+        setUploadError(upload.error);
+      }
+      if (upload.complete && upload.result) {
+        const parent = parentDirectory(upload.result.path);
+        setUploadError(null);
+        setPath(parent);
+        setManualPath(parent);
+        void queryClient.invalidateQueries({ queryKey: ["project-files", props.project.id] });
+        void queryClient.invalidateQueries({ queryKey: ["project-files", props.project.id, parent] });
+        void queryClient.invalidateQueries({ queryKey: ["project-file-content", props.project.id, upload.result.path] });
+        clearCompletedProjectFileUpload(upload.id);
+      }
+    }
+  }, [props.project.id, queryClient, uploadProgress]);
 
   return (
     <section className="filesPanel" aria-label="Project files">
@@ -284,21 +282,27 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
             className="ghostButton compact"
             type="button"
             onClick={() => uploadInputRef.current?.click()}
-            disabled={!canUpload || uploadMutation.isPending}
+            disabled={!canUpload}
           >
-            {uploadMutation.isPending ? <Loader2 className="spin" size={14} /> : <FileUp size={14} />}
+            {uploadProgress.some((upload) => !upload.complete && !upload.error) ? <Loader2 className="spin" size={14} /> : <FileUp size={14} />}
             Upload
           </button>
         </div>
       </div>
 
       {uploadError ? <InlineNotice tone="danger">{errorNotice(uploadError, "Unable to upload file.").message}</InlineNotice> : null}
-      {uploadProgress ? (
-        <InlineNotice tone="info">
-          Uploading {uploadProgress.filename}: {formatBytes(uploadProgress.uploadedBytes)} / {formatBytes(uploadProgress.totalBytes)}
-          {uploadProgress.resumed ? " resumed" : ""}
+      {uploadProgress.map((upload) => (
+        <InlineNotice key={upload.id} tone={upload.error ? "danger" : "info"}>
+          <span className="uploadNoticeContent">
+            <span>
+              Uploading {upload.filename}: {formatBytes(upload.uploadedBytes)} / {formatBytes(upload.totalBytes)}
+              {upload.resumed ? " resumed" : ""}
+              {upload.error ? ` - ${errorNotice(upload.error, "Unable to upload file.").message}` : ""}
+            </span>
+            <progress value={upload.totalBytes > 0 ? upload.uploadedBytes : 1} max={upload.totalBytes > 0 ? upload.totalBytes : 1} />
+          </span>
         </InlineNotice>
-      ) : null}
+      ))}
 
       <div className="directoryPathJump">
         <input

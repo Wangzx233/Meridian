@@ -154,14 +154,16 @@ export function TaskSessionPanel(props: {
   const [taskMemory, setTaskMemory] = useState<TaskMemoryDraft>(emptyTaskMemoryDraft());
   const [memoryDetailsOpen, setMemoryDetailsOpen] = useState(false);
   const [memoryDraftRunId, setMemoryDraftRunId] = useState<string | null>(null);
-  const [activeWorkbenchTab, setActiveWorkbenchTab] = useState<WorkbenchTab>("output");
-  const [visitedWorkbenchTabs, setVisitedWorkbenchTabs] = useState<WorkbenchTab[]>(["output"]);
-  const [visitedWorkbenchProjectId, setVisitedWorkbenchProjectId] = useState<string | null>(null);
+  const taskPageKey = props.task?.id ? `ctw.taskPage.${props.task.id}` : null;
+  const [storedWorkbenchTab, setStoredWorkbenchTab] = useStoredString(taskPageKey ? `${taskPageKey}.workspace` : null, "output");
+  const [storedSideTab, setStoredSideTab] = useStoredString(taskPageKey ? `${taskPageKey}.side` : null, "context");
+  const activeWorkbenchTab = validWorkbenchTab(storedWorkbenchTab);
+  const activeSideTab = validSidePanelTab(storedSideTab);
+  const [visitedWorkbenchTabs, setVisitedWorkbenchTabs] = useState<WorkbenchTab[]>(() => [activeWorkbenchTab]);
   const projectId = props.project?.id ?? null;
   const [projectFileOpenRequest, setProjectFileOpenRequest] = useState<ProjectFileOpenRequest | null>(null);
   const projectFileOpenRequestIdRef = useRef(0);
   const currentProjectIdRef = useRef(projectId);
-  const [activeSideTab, setActiveSideTab] = useState<SidePanelTab>("context");
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [sidePanelWidth, setSidePanelWidth] = useStoredPanelSize(
@@ -192,6 +194,14 @@ export function TaskSessionPanel(props: {
     } catch {
       // Local storage can be unavailable in private or restricted browser modes.
     }
+  };
+
+  const setActiveWorkbenchTab = (tab: WorkbenchTab) => {
+    setStoredWorkbenchTab(tab);
+  };
+
+  const setActiveSideTab = (tab: SidePanelTab) => {
+    setStoredSideTab(tab);
   };
 
   const clearMessageDraft = () => {
@@ -228,17 +238,9 @@ export function TaskSessionPanel(props: {
   }, [messageDraftKey]);
 
   useEffect(() => {
-    setActiveWorkbenchTab("output");
-    setActiveSideTab("context");
+    setVisitedWorkbenchTabs([activeWorkbenchTab]);
     setProjectFileOpenRequest(null);
   }, [props.task?.id]);
-
-  useEffect(() => {
-    setActiveWorkbenchTab("output");
-    setVisitedWorkbenchTabs(["output"]);
-    setVisitedWorkbenchProjectId(projectId);
-    setProjectFileOpenRequest(null);
-  }, [projectId]);
 
   useEffect(() => {
     currentProjectIdRef.current = projectId;
@@ -265,12 +267,11 @@ export function TaskSessionPanel(props: {
   const hasObservedSession = Boolean(props.task?.codex_session_id || props.runs.some((run) => run.codex_session_id));
   const canCompact = canSend && hasObservedSession;
   const canChangeGoal = canSend && hasObservedSession;
-  const activeWorkspaceTab = visitedWorkbenchProjectId === projectId ? activeWorkbenchTab : "output";
-  const mountedWorkspaceTabs = visitedWorkbenchProjectId === projectId ? visitedWorkbenchTabs : ["output"];
+  const activeWorkspaceTab = activeWorkbenchTab;
+  const mountedWorkspaceTabs = visitedWorkbenchTabs;
 
   const selectWorkbenchTab = (tab: WorkbenchTab) => {
     setActiveWorkbenchTab(tab);
-    setVisitedWorkbenchProjectId(projectId);
   };
 
   const handleProjectFileLinkClick = (href: string) => {
@@ -969,6 +970,14 @@ function trimTaskMemoryDraft(memory: TaskMemoryDraft): TaskMemoryDraft {
     source_commit: memory.source_commit?.trim() || undefined,
     stale_conditions: memory.stale_conditions.trim(),
   };
+}
+
+function validWorkbenchTab(value: string): WorkbenchTab {
+  return value === "terminal" || value === "files" ? value : "output";
+}
+
+function validSidePanelTab(value: string): SidePanelTab {
+  return value === "agents" || value === "runs" || value === "prompt" ? value : "context";
 }
 
 function buildGoalCommand(title: string, description: string) {

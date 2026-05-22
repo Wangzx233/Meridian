@@ -72,12 +72,21 @@ type StoredWorkbenchLocation = {
   runId: string | null;
 };
 
+type StoredWorkbenchLocations = {
+  activeServerId: string | null;
+  servers: Record<string, Omit<StoredWorkbenchLocation, "serverId">>;
+};
+
 const workbenchLocationStorageKey = "ctw.lastLocation";
 const emptyWorkbenchLocation: StoredWorkbenchLocation = {
   serverId: null,
   projectId: null,
   taskId: null,
   runId: null,
+};
+const emptyWorkbenchLocations: StoredWorkbenchLocations = {
+  activeServerId: null,
+  servers: {},
 };
 
 export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void; loggingOut: boolean }) {
@@ -88,6 +97,7 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(() => initialLocation.projectId);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() => initialLocation.taskId);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(() => initialLocation.runId);
+  const [serverRestoredAt, setServerRestoredAt] = useState<string | null>(() => initialLocation.serverId);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [taskCollapsed, setTaskCollapsed] = useState(false);
@@ -130,12 +140,17 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
     }
 
     if (!selectedServerId || !servers.some((server) => server.id === selectedServerId)) {
-      setSelectedServerId(servers[0].id);
-      setSelectedProjectId(null);
-      setSelectedTaskId(null);
-      setSelectedRunId(null);
+      const nextServerId = initialLocation.serverId && servers.some((server) => server.id === initialLocation.serverId)
+        ? initialLocation.serverId
+        : servers[0].id;
+      const restoredLocation = readStoredServerLocation(nextServerId);
+      setSelectedServerId(nextServerId);
+      setSelectedProjectId(restoredLocation.projectId);
+      setSelectedTaskId(restoredLocation.taskId);
+      setSelectedRunId(restoredLocation.runId);
+      setServerRestoredAt(nextServerId);
     }
-  }, [selectedServerId, servers, serversQuery.isFetching, serversQuery.isLoading]);
+  }, [initialLocation.serverId, selectedServerId, servers, serversQuery.isFetching, serversQuery.isLoading]);
 
   const projectsQuery = useQuery({
     queryKey: ["projects", selectedServerId],
@@ -156,11 +171,25 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
     }
 
     if (!selectedProjectId || !projects.some((project) => project.id === selectedProjectId)) {
+      if (selectedServerId && serverRestoredAt === selectedServerId) {
+        const restoredLocation = readStoredServerLocation(selectedServerId);
+        const restoredProject = restoredLocation.projectId
+          ? projects.find((project) => project.id === restoredLocation.projectId)
+          : null;
+
+        if (restoredProject) {
+          setSelectedProjectId(restoredProject.id);
+          setSelectedTaskId(restoredLocation.taskId);
+          setSelectedRunId(restoredLocation.runId);
+          return;
+        }
+      }
+
       setSelectedProjectId(projects[0].id);
       setSelectedTaskId(null);
       setSelectedRunId(null);
     }
-  }, [projects, projectsQuery.isFetching, projectsQuery.isLoading, selectedProjectId]);
+  }, [projects, projectsQuery.isFetching, projectsQuery.isLoading, selectedProjectId, selectedServerId, serverRestoredAt]);
 
   const selectedServer = servers.find((server) => server.id === selectedServerId) ?? null;
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
@@ -570,6 +599,7 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
     setSelectedProjectId(notification.project_id);
     setSelectedTaskId(notification.task_id);
     setSelectedRunId(notification.run_id ?? null);
+    setServerRestoredAt(notification.server_id);
     setNotificationsOpen(false);
     acknowledgeNotification(notification.id);
   };
@@ -763,10 +793,12 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
           projectsState={queryState(projectsQuery)}
           onToggleCollapsed={() => setNavCollapsed((value) => !value)}
           onSelectServer={(serverId) => {
+            const restoredLocation = readStoredServerLocation(serverId);
             setSelectedServerId(serverId);
-            setSelectedProjectId(null);
-            setSelectedTaskId(null);
-            setSelectedRunId(null);
+            setSelectedProjectId(restoredLocation.projectId);
+            setSelectedTaskId(restoredLocation.taskId);
+            setSelectedRunId(restoredLocation.runId);
+            setServerRestoredAt(serverId);
           }}
           onSelectProject={(projectId) => {
             setSelectedProjectId(projectId);
@@ -864,20 +896,73 @@ function getBrowserNotificationPermission(): NotificationPermission {
 }
 
 function readStoredWorkbenchLocation(): StoredWorkbenchLocation {
+  const storedLocations = readStoredWorkbenchLocations();
+  if (storedLocations.activeServerId) {
+    return {
+      ...emptyWorkbenchLocation,
+      ...(storedLocations.servers[storedLocations.activeServerId] ?? {}),
+      serverId: storedLocations.activeServerId,
+    };
+  }
+
+  return emptyWorkbenchLocation;
+}
+
+function readStoredServerLocation(serverId: string): Omit<StoredWorkbenchLocation, "serverId"> {
+  return readStoredWorkbenchLocations().servers[serverId] ?? {
+    projectId: null,
+    taskId: null,
+    runId: null,
+  };
+}
+
+function readStoredWorkbenchLocations(): StoredWorkbenchLocations {
   try {
     const raw = window.localStorage.getItem(workbenchLocationStorageKey);
     if (!raw) {
-      return emptyWorkbenchLocation;
+      return emptyWorkbenchLocations;
     }
-    const parsed = JSON.parse(raw) as Partial<StoredWorkbenchLocation>;
+    const parsed = JSON.parse(raw) as Partial<StoredWorkbenchLocations & StoredWorkbenchLocation>;
+    if (parsed.servers && typeof parsed.servers === "object") {
+      return {
+        activeServerId: typeof parsed.activeServerId === "string" ? parsed.activeServerId : null,
+        servers: Object.fromEntries(
+          Object.entries(parsed.servers).flatMap(([serverId, location]) => {
+            if (!location || typeof location !== "object") {
+              return [];
+            }
+            const partial = location as Partial<Omit<StoredWorkbenchLocation, "serverId">>;
+            return [
+              [
+                serverId,
+                {
+                  projectId: typeof partial.projectId === "string" ? partial.projectId : null,
+                  taskId: typeof partial.taskId === "string" ? partial.taskId : null,
+                  runId: typeof partial.runId === "string" ? partial.runId : null,
+                },
+              ],
+            ];
+          }),
+        ),
+      };
+    }
+
+    const serverId = typeof parsed.serverId === "string" ? parsed.serverId : null;
+    if (!serverId) {
+      return emptyWorkbenchLocations;
+    }
     return {
-      serverId: typeof parsed.serverId === "string" ? parsed.serverId : null,
-      projectId: typeof parsed.projectId === "string" ? parsed.projectId : null,
-      taskId: typeof parsed.taskId === "string" ? parsed.taskId : null,
-      runId: typeof parsed.runId === "string" ? parsed.runId : null,
+      activeServerId: serverId,
+      servers: {
+        [serverId]: {
+          projectId: typeof parsed.projectId === "string" ? parsed.projectId : null,
+          taskId: typeof parsed.taskId === "string" ? parsed.taskId : null,
+          runId: typeof parsed.runId === "string" ? parsed.runId : null,
+        },
+      },
     };
   } catch {
-    return emptyWorkbenchLocation;
+    return emptyWorkbenchLocations;
   }
 }
 
@@ -887,7 +972,19 @@ function writeStoredWorkbenchLocation(location: StoredWorkbenchLocation) {
       window.localStorage.removeItem(workbenchLocationStorageKey);
       return;
     }
-    window.localStorage.setItem(workbenchLocationStorageKey, JSON.stringify(location));
+    const storedLocations = readStoredWorkbenchLocations();
+    const nextLocations: StoredWorkbenchLocations = {
+      activeServerId: location.serverId,
+      servers: { ...storedLocations.servers },
+    };
+    if (location.serverId) {
+      nextLocations.servers[location.serverId] = {
+        projectId: location.projectId,
+        taskId: location.taskId,
+        runId: location.runId,
+      };
+    }
+    window.localStorage.setItem(workbenchLocationStorageKey, JSON.stringify(nextLocations));
   } catch {
     // Local storage can be unavailable in private or restricted browser modes.
   }

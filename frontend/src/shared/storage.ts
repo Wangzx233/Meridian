@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { clamp } from "./format";
 
 export function useStoredPanelSize(key: string, fallback: number, min: number, max: number): [number, (value: number) => void] {
@@ -26,22 +26,48 @@ export function useStoredPanelSize(key: string, fallback: number, min: number, m
 }
 
 
-export function useStoredString(key: string, fallback: string): [string, (value: string) => void] {
-  const [value, setValueState] = useState(() => {
-    try {
-      return window.localStorage.getItem(key) ?? fallback;
-    } catch {
-      return fallback;
+function readStoredString(key: string | null, fallback: string): string {
+  if (!key) {
+    return fallback;
+  }
+
+  try {
+    return window.localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function useStoredString(key: string | null, fallback: string): [string, (value: string) => void] {
+  const keyRef = useRef<string | null>(key);
+  const [stored, setStored] = useState(() => ({
+    key,
+    value: readStoredString(key, fallback),
+  }));
+  const value = stored.key === key ? stored.value : readStoredString(key, fallback);
+
+  useLayoutEffect(() => {
+    keyRef.current = key;
+    if (stored.key === key && stored.value === value) {
+      return;
     }
-  });
+    setStored({ key, value });
+  }, [key, stored.key, stored.value, value]);
 
   const setValue = (next: string) => {
-    setValueState(next);
+    const activeKey = keyRef.current;
+    setStored({
+      key: activeKey,
+      value: next,
+    });
     try {
+      if (!activeKey) {
+        return;
+      }
       if (next) {
-        window.localStorage.setItem(key, next);
+        window.localStorage.setItem(activeKey, next);
       } else {
-        window.localStorage.removeItem(key);
+        window.localStorage.removeItem(activeKey);
       }
     } catch {
       // Local storage can be unavailable in private or restricted browser modes.

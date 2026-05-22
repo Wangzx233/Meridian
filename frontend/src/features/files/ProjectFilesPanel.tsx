@@ -311,6 +311,7 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
             <span>
               Uploading {upload.filename}: {formatBytes(Math.max(upload.uploadedBytes, upload.sentBytes))} / {formatBytes(upload.totalBytes)}
               {upload.sentBytes > upload.uploadedBytes ? ` confirmed ${formatBytes(upload.uploadedBytes)}` : ""}
+              {upload.proxyLimited ? " proxy limit detected, using smaller chunks" : ""}
               {upload.resumed ? " resumed" : ""}
               {upload.complete ? " complete" : ""}
               {upload.error ? ` - ${errorNotice(upload.error, "Unable to upload file.").message}` : ""}

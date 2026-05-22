@@ -685,10 +685,13 @@ Rules:
   `Upload-Offset`. If the connected runner supports
   `project_file_upload_stream`, the control plane streams each PATCH body to the
   runner file-transfer WebSocket as a binary frame instead of reading the whole
-  chunk into memory. The web UI uses 768 KiB tus chunks so default nginx
-  deployments with a 1 MiB request-body limit can still pass each PATCH. Older
-  runners fall back to `project.file.upload.chunk`; the backend accepts chunks
-  up to 4 MiB, but the web UI still sends 768 KiB chunks.
+  chunk into memory. The web UI starts stream-capable runners with 16 MiB tus
+  chunks for throughput. If a proxy rejects a PATCH with HTTP 413, the web UI
+  restarts that tus upload URL with 768 KiB chunks and shows a proxy-limit
+  notice in the upload progress. Older runners fall back to
+  `project.file.upload.chunk`; the backend accepts chunks up to 4 MiB, and the
+  web UI starts that legacy path with 4 MiB chunks before applying the same 413
+  downgrade.
 - Parallel tus uploads are not enabled yet because tus-js-client requires the
   tus Concatenation extension for that mode. Enabling it would require separate
   partial upload resources plus a runner-side concat step before replacing the

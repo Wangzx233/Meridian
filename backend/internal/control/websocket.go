@@ -32,6 +32,7 @@ func (a *API) handleRunnerWS(w http.ResponseWriter, r *http.Request) {
 	var runnerID string
 	defer func() {
 		if runnerID != "" {
+			a.fileTransfers.Close(runnerID)
 			if a.runners.Unregister(runnerID, conn) {
 				a.markRunnerOfflineAfterGrace(runnerID, 45*time.Second)
 			}
@@ -181,6 +182,52 @@ func (a *API) handleRunnerWS(w http.ResponseWriter, r *http.Request) {
 			a.logger.Info("runner cancel ack", "runner_id", runnerID, "run_id", payload.RunID, "accepted", payload.Accepted)
 		default:
 			a.logger.Warn("unknown runner message", "type", env.Type, "runner_id", runnerID)
+		}
+	}
+}
+
+func (a *API) handleRunnerFileTransferWS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	conn, err := runnerUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		a.logger.Warn("runner file transfer websocket upgrade failed", "error", err)
+		return
+	}
+	defer conn.Close()
+
+	var runnerID string
+	defer func() {
+		if runnerID != "" {
+			a.fileTransfers.Unregister(runnerID, conn)
+		}
+	}()
+
+	for {
+		var env RunnerEnvelope
+		if err := conn.ReadJSON(&env); err != nil {
+			a.logger.Info("runner file transfer websocket closed", "runner_id", runnerID, "error", err)
+			return
+		}
+		switch env.Type {
+		case "runner.file_transfer.register":
+			var payload RunnerFileTransferRegisterPayload
+			if !decodeEnvelopePayload(env.Payload, &payload, a, "runner.file_transfer.register") {
+				continue
+			}
+			if payload.RunnerID == "" {
+				continue
+			}
+			runnerID = payload.RunnerID
+			a.fileTransfers.Register(payload.RunnerID, conn)
+		case "project.file.upload.stream.response":
+			if !a.fileTransfers.HandleResponse(runnerID, env) {
+				a.logger.Warn("unmatched runner file transfer response", "type", env.Type, "message_id", env.MessageID, "runner_id", runnerID)
+			}
+		default:
+			a.logger.Warn("unknown runner file transfer message", "type", env.Type, "runner_id", runnerID)
 		}
 	}
 }

@@ -11,12 +11,13 @@ import (
 )
 
 type API struct {
-	store       *Store
-	hub         *EventHub
-	terminalHub *TerminalHub
-	runners     *RunnerManager
-	logger      *slog.Logger
-	auth        AuthConfig
+	store         *Store
+	hub           *EventHub
+	terminalHub   *TerminalHub
+	runners       *RunnerManager
+	fileTransfers *RunnerFileTransferManager
+	logger        *slog.Logger
+	auth          AuthConfig
 }
 
 func NewAPI(store *Store, logger *slog.Logger, auth AuthConfig) *API {
@@ -24,12 +25,13 @@ func NewAPI(store *Store, logger *slog.Logger, auth AuthConfig) *API {
 		logger = slog.Default()
 	}
 	return &API{
-		store:       store,
-		hub:         NewEventHub(),
-		terminalHub: NewTerminalHub(),
-		runners:     NewRunnerManager(),
-		logger:      logger,
-		auth:        auth,
+		store:         store,
+		hub:           NewEventHub(),
+		terminalHub:   NewTerminalHub(),
+		runners:       NewRunnerManager(),
+		fileTransfers: NewRunnerFileTransferManager(),
+		logger:        logger,
+		auth:          auth,
 	}
 }
 
@@ -53,6 +55,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/runs/", a.handleRunRoutes)
 	mux.HandleFunc("/api/v1/runners/update-all", a.handleRunnerUpdateAll)
 	mux.HandleFunc("/api/v1/runner/ws", a.handleRunnerWS)
+	mux.HandleFunc("/api/v1/runner/file-transfer/ws", a.handleRunnerFileTransferWS)
 	mux.HandleFunc("/api/v1/runner/install.ps1", a.handleRunnerInstallPowerShell)
 	mux.HandleFunc("/api/v1/runner/install.sh", a.handleRunnerInstallShell)
 	mux.HandleFunc("/api/v1/runner/artifacts/", a.handleRunnerArtifact)

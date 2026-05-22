@@ -440,6 +440,17 @@ func (a *API) requestProjectFileUploadChunk(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return ProjectFileActionResult{}, false
 	}
+	if a.runners.Supports(server.RunnerID, "project_file_upload_stream") {
+		if !a.fileTransfers.WaitConnected(r.Context(), server.RunnerID, 2*time.Second) {
+			a.respond(w, http.StatusOK, nil, ErrRunnerUnavailable)
+			return ProjectFileActionResult{}, false
+		}
+		result, handled := a.requestProjectFileUploadStreamChunk(w, server.RunnerID, project.Workdir, targetPath, uploadID, offset, totalSize, data, createDirs, final)
+		if handled {
+			return result, true
+		}
+		return ProjectFileActionResult{}, false
+	}
 	env, err := a.runners.Request(server.RunnerID, "project.file.upload.chunk", ProjectFileUploadChunkRequestPayload{
 		Workdir:       project.Workdir,
 		Path:          targetPath,
@@ -456,6 +467,37 @@ func (a *API) requestProjectFileUploadChunk(w http.ResponseWriter, r *http.Reque
 	}
 	var result ProjectFileActionResult
 	if !decodeEnvelopePayload(env.Payload, &result, a, "project.file.upload.chunk.response") {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Invalid runner response.", nil)
+		return ProjectFileActionResult{}, false
+	}
+	if result.Error != nil {
+		status := http.StatusBadRequest
+		if result.ResumeOffset != offset {
+			status = http.StatusConflict
+		}
+		writeError(w, status, "validation_error", *result.Error, nil)
+		return ProjectFileActionResult{}, false
+	}
+	return result, true
+}
+
+func (a *API) requestProjectFileUploadStreamChunk(w http.ResponseWriter, runnerID, workdir, targetPath, uploadID string, offset, totalSize int64, data []byte, createDirs, final bool) (ProjectFileActionResult, bool) {
+	env, err := a.fileTransfers.Request(runnerID, "project.file.upload.stream", ProjectFileUploadStreamRequestPayload{
+		Workdir:    workdir,
+		Path:       targetPath,
+		UploadID:   uploadID,
+		Offset:     offset,
+		TotalSize:  totalSize,
+		ChunkBytes: int64(len(data)),
+		CreateDirs: createDirs,
+		Final:      final,
+	}, data, 2*time.Minute)
+	if err != nil {
+		a.respondRunnerRequestError(w, runnerID, "project file upload stream request", err)
+		return ProjectFileActionResult{}, false
+	}
+	var result ProjectFileActionResult
+	if !decodeEnvelopePayload(env.Payload, &result, a, "project.file.upload.stream.response") {
 		writeError(w, http.StatusInternalServerError, "internal_error", "Invalid runner response.", nil)
 		return ProjectFileActionResult{}, false
 	}

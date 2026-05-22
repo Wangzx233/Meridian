@@ -650,6 +650,10 @@ func TestRunnerShutdownMessageStopsReconnect(t *testing.T) {
 	registered := make(chan struct{}, 1)
 	accepted := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/runner/ws" {
+			http.NotFound(w, r)
+			return
+		}
 		conn, err := testUpgrader.Upgrade(w, r, nil)
 		if err != nil {
 			t.Errorf("upgrade: %v", err)

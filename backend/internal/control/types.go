@@ -156,6 +156,17 @@ type ProjectFileUploadChunkRequestPayload struct {
 	Final         bool   `json:"final"`
 }
 
+type ProjectFileUploadStreamRequestPayload struct {
+	Workdir    string `json:"workdir"`
+	Path       string `json:"path"`
+	UploadID   string `json:"upload_id"`
+	Offset     int64  `json:"offset"`
+	TotalSize  int64  `json:"total_size"`
+	ChunkBytes int64  `json:"chunk_bytes"`
+	CreateDirs bool   `json:"create_dirs"`
+	Final      bool   `json:"final"`
+}
+
 type ProjectFileActionRequestPayload struct {
 	Workdir    string `json:"workdir"`
 	Action     string `json:"action"`
@@ -360,6 +371,11 @@ type RunnerRegisterPayload struct {
 	CodexPath    string         `json:"codex_path"`
 	Capabilities map[string]any `json:"capabilities"`
 	ActiveRunIDs []string       `json:"active_run_ids"`
+}
+
+type RunnerFileTransferRegisterPayload struct {
+	RunnerID string `json:"runner_id"`
+	Version  string `json:"version"`
 }
 
 type RunnerHeartbeatPayload struct {

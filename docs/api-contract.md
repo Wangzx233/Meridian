@@ -103,6 +103,7 @@ can be added later without changing the top-level shape.
     "project_file_io": true,
     "project_file_upload": true,
     "project_file_upload_chunked": true,
+    "project_file_upload_stream": true,
     "project_terminal": true,
     "project_command": true,
     "shutdown": true
@@ -126,7 +127,8 @@ websocket for `runner_id`. `runner_connection` describes that active process and
 is omitted when no runner is connected. File browsing, file editing, and PTY
 terminal sessions also require the corresponding values in
 `runner_capabilities`; a connected runner without `project_file_io`,
-`project_file_upload_chunked`, or `project_terminal` is an old runner binary.
+`project_file_upload_chunked`, `project_file_upload_stream`, or
+`project_terminal` is an old runner binary.
 
 ### Project
 
@@ -639,9 +641,11 @@ Rules:
 - Resumable browser uploads use the tus 1.0 protocol subset implemented at
   `/files/upload/tus`. The web UI uses `tus-js-client`, creates an upload with
   `POST`, resumes with `HEAD`, and sends binary `PATCH` chunks with
-  `Upload-Offset`. Each PATCH body is limited to 4 MiB. The control plane then
-  forwards each chunk to the runner using the `project.file.upload.chunk`
-  message described below.
+  `Upload-Offset`. Each PATCH body is limited to 4 MiB. If the connected runner
+  supports `project_file_upload_stream`, the control plane forwards the chunk to
+  the runner file-transfer WebSocket as a binary frame instead of embedding file
+  bytes in the control WebSocket JSON stream. Older runners fall back to
+  `project.file.upload.chunk`.
 - Parallel tus uploads are not enabled yet because tus-js-client requires the
   tus Concatenation extension for that mode. Enabling it would require separate
   partial upload resources plus a runner-side concat step before replacing the
@@ -1182,6 +1186,7 @@ Direction: runner to control plane.
       "project_file_io": true,
       "project_file_upload": true,
       "project_file_upload_chunked": true,
+      "project_file_upload_stream": true,
       "project_terminal": true,
       "project_command": true,
       "codex_options": true,
@@ -1742,6 +1747,69 @@ the request.
 }
 ```
 
+### Runner file-transfer WebSocket
+
+Endpoint:
+
+```text
+GET /api/v1/runner/file-transfer/ws
+```
+
+The runner opens this authenticated WebSocket in addition to the control
+WebSocket. It registers with:
+
+```json
+{
+  "type": "runner.file_transfer.register",
+  "message_id": "msg_transfer_register",
+  "sent_at": "2026-05-11T08:04:24Z",
+  "payload": {
+    "runner_id": "runner_desktop",
+    "version": "0.5.0"
+  }
+}
+```
+
+For each `project.file.upload.stream` request, the control plane sends one JSON
+text frame with metadata, followed immediately by one binary frame containing
+the raw upload chunk bytes:
+
+```json
+{
+  "type": "project.file.upload.stream",
+  "message_id": "msg_528",
+  "sent_at": "2026-05-11T08:04:24Z",
+  "payload": {
+    "workdir": "D:\\go\\workplace",
+    "path": "assets/video.mp4",
+    "upload_id": "up-1843290-1789999000000-dbcac612",
+    "offset": 1048576,
+    "total_size": 1843290,
+    "chunk_bytes": 786714,
+    "create_dirs": true,
+    "final": true
+  }
+}
+```
+
+The runner replies on the same file-transfer WebSocket:
+
+```json
+{
+  "type": "project.file.upload.stream.response",
+  "message_id": "msg_528",
+  "sent_at": "2026-05-11T08:04:24Z",
+  "payload": {
+    "root": "D:\\go\\workplace",
+    "path": "assets/video.mp4",
+    "uploaded_bytes": 1843290,
+    "total_size": 1843290,
+    "resume_offset": 1843290,
+    "complete": true
+  }
+}
+```
+
 ### `project.file.action`
 
 Direction: control plane to runner.
@@ -1782,7 +1850,8 @@ Rules:
 
 - `project.file.write.response`, `project.file.upload.response`,
   `project.file.upload.status.response`, `project.file.upload.chunk.response`,
-  and `project.file.action.response` return the affected project-root-relative
+  `project.file.upload.stream.response`, and `project.file.action.response`
+  return the affected project-root-relative
   path and metadata.
 - The runner must reject writes, uploads, renames, and deletes that escape
   `workdir`.

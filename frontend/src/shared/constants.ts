@@ -38,6 +38,7 @@ export const runnerFeatureCapabilities = [
   "project_file_io",
   "project_file_upload",
   "project_file_upload_chunked",
+  "project_file_upload_stream",
   "project_terminal",
 ] as const;
 

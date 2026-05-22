@@ -62,6 +62,17 @@ type uploadLockState struct {
 	refs int
 }
 
+type projectFileUploadStreamPayload struct {
+	Workdir    string `json:"workdir"`
+	Path       string `json:"path"`
+	UploadID   string `json:"upload_id"`
+	Offset     int64  `json:"offset"`
+	TotalSize  int64  `json:"total_size"`
+	ChunkBytes int64  `json:"chunk_bytes"`
+	CreateDirs bool   `json:"create_dirs"`
+	Final      bool   `json:"final"`
+}
+
 func New(cfg Config, logger *slog.Logger) *Agent {
 	if logger == nil {
 		logger = slog.Default()
@@ -152,6 +163,7 @@ func (a *Agent) runOnce(ctx context.Context) (bool, error) {
 		return true, err
 	}
 	go a.heartbeatLoop(connCtx)
+	go a.runFileTransfer(connCtx)
 	for {
 		var env Envelope
 		if err := conn.ReadJSON(&env); err != nil {
@@ -347,6 +359,126 @@ func (a *Agent) runOnce(ctx context.Context) (bool, error) {
 			terminals.close(payload.TerminalID)
 		default:
 			a.logger.Warn("unknown control message", "type", env.Type)
+		}
+	}
+}
+
+func (a *Agent) runFileTransfer(ctx context.Context) {
+	retryDelay := time.Second
+	for {
+		if ctx.Err() != nil || a.shouldStop() {
+			return
+		}
+		err := a.runFileTransferOnce(ctx)
+		if ctx.Err() != nil || a.shouldStop() {
+			return
+		}
+		a.logger.Warn("runner file transfer websocket disconnected", "error", err, "retry_in", retryDelay)
+		if !sleepContext(ctx, retryDelay) {
+			return
+		}
+		retryDelay *= 2
+		if retryDelay > 30*time.Second {
+			retryDelay = 30 * time.Second
+		}
+	}
+}
+
+func (a *Agent) runFileTransferOnce(ctx context.Context) error {
+	u, err := url.Parse(a.cfg.ControlURL)
+	if err != nil {
+		return err
+	}
+	if u.Scheme == "http" {
+		u.Scheme = "ws"
+	}
+	if u.Scheme == "https" {
+		u.Scheme = "wss"
+	}
+	u.Path = "/api/v1/runner/file-transfer/ws"
+
+	header := make(map[string][]string)
+	if a.cfg.RunnerToken != "" {
+		header["Authorization"] = []string{"Bearer " + a.cfg.RunnerToken}
+	}
+	conn, _, err := websocket.DefaultDialer.DialContext(ctx, u.String(), header)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	stopOnCancel := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-stopOnCancel:
+		}
+	}()
+	defer close(stopOnCancel)
+	if err := writeFileTransferJSON(conn, Envelope{
+		Type:      "runner.file_transfer.register",
+		MessageID: "msg_" + time.Now().UTC().Format("20060102150405.000000000"),
+		SentAt:    time.Now().UTC(),
+		Payload: mustMarshalJSON(map[string]any{
+			"runner_id": a.cfg.RunnerID,
+			"version":   a.cfg.Version,
+		}),
+	}); err != nil {
+		return err
+	}
+	for {
+		messageType, raw, err := conn.ReadMessage()
+		if err != nil {
+			return err
+		}
+		if messageType != websocket.TextMessage {
+			a.logger.Warn("unexpected file transfer websocket message", "message_type", messageType)
+			continue
+		}
+		var env Envelope
+		if err := json.Unmarshal(raw, &env); err != nil {
+			a.logger.Warn("invalid file transfer envelope", "error", err)
+			continue
+		}
+		if env.Type != "project.file.upload.stream" {
+			a.logger.Warn("unknown file transfer message", "type", env.Type)
+			continue
+		}
+		messageID := env.MessageID
+		var payload projectFileUploadStreamPayload
+		if err := json.Unmarshal(env.Payload, &payload); err != nil {
+			a.logger.Warn("invalid project.file.upload.stream", "error", err)
+			msg := "invalid upload stream payload"
+			_ = writeFileTransferJSON(conn, Envelope{
+				Type:      "project.file.upload.stream.response",
+				MessageID: messageID,
+				SentAt:    time.Now().UTC(),
+				Payload:   mustMarshalJSON(ProjectFileActionResult{Error: &msg}),
+			})
+			continue
+		}
+		messageType, data, err := conn.ReadMessage()
+		if err != nil {
+			return err
+		}
+		if messageType != websocket.BinaryMessage {
+			msg := "upload stream data frame is required"
+			_ = writeFileTransferJSON(conn, Envelope{
+				Type:      "project.file.upload.stream.response",
+				MessageID: messageID,
+				SentAt:    time.Now().UTC(),
+				Payload:   mustMarshalJSON(ProjectFileActionResult{Path: payload.Path, TotalSize: payload.TotalSize, ResumeOffset: payload.Offset, Error: &msg}),
+			})
+			continue
+		}
+		result := a.handleProjectFileUploadStream(payload, data)
+		if err := writeFileTransferJSON(conn, Envelope{
+			Type:      "project.file.upload.stream.response",
+			MessageID: messageID,
+			SentAt:    time.Now().UTC(),
+			Payload:   mustMarshalJSON(result),
+		}); err != nil {
+			return err
 		}
 	}
 }
@@ -573,6 +705,16 @@ func (a *Agent) handleProjectFileUploadChunk(messageID string, raw json.RawMessa
 	_ = a.sendResponse("project.file.upload.chunk.response", messageID, writeProjectFileUploadChunk(payload.Workdir, payload.Path, payload.UploadID, payload.Offset, payload.TotalSize, content, payload.CreateDirs, payload.Final))
 }
 
+func (a *Agent) handleProjectFileUploadStream(payload projectFileUploadStreamPayload, data []byte) ProjectFileActionResult {
+	if int64(len(data)) != payload.ChunkBytes {
+		msg := "upload stream data length mismatch"
+		return ProjectFileActionResult{Path: payload.Path, TotalSize: payload.TotalSize, ResumeOffset: payload.Offset, Error: &msg}
+	}
+	unlock := a.lockProjectFileUpload(payload.Workdir, payload.Path, payload.UploadID)
+	defer unlock()
+	return writeProjectFileUploadChunk(payload.Workdir, payload.Path, payload.UploadID, payload.Offset, payload.TotalSize, data, payload.CreateDirs, payload.Final)
+}
+
 func (a *Agent) lockProjectFileUpload(workdir, path, uploadID string) func() {
 	key := workdir + "\x00" + path + "\x00" + uploadID
 	a.uploadLocksMu.Lock()
@@ -673,6 +815,7 @@ func (a *Agent) register() error {
 			"project_file_io":             true,
 			"project_file_upload":         true,
 			"project_file_upload_chunked": true,
+			"project_file_upload_stream":  true,
 			"project_command":             true,
 			"project_terminal":            true,
 			"codex_options":               true,
@@ -1015,4 +1158,19 @@ func (a *Agent) sendResponse(typ, messageID string, payload any) error {
 		return errRunnerNotConnected
 	}
 	return a.conn.WriteJSON(env)
+}
+
+func writeFileTransferJSON(conn *websocket.Conn, value any) error {
+	if conn == nil {
+		return errRunnerNotConnected
+	}
+	return conn.WriteJSON(value)
+}
+
+func mustMarshalJSON(value any) json.RawMessage {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return raw
 }

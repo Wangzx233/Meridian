@@ -40,14 +40,13 @@ import Editor from "@monaco-editor/react";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError, api } from "../../api";
+import { api } from "../../api";
+import type { ProjectFileUploadProgress } from "../../api";
 import type { Project, ProjectFileContent, ProjectFileEntry, Server } from "../../types";
 import { formatBytes } from "../../shared/format";
 import { runnerCapabilityBlockedReason, runnerCapabilityPillLabel } from "../../shared/runnerCapabilities";
 import { CapabilityPill, EmptyState, ErrorState, InlineNotice, LoadingState } from "../../shared/ui";
 import { errorNotice } from "../../shared/notices";
-
-const maxUploadBytes = 5 * 1024 * 1024;
 
 type FileDialogState =
   | { action: "create_file" | "create_dir"; path: string }
@@ -73,12 +72,13 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
   const [actionError, setActionError] = useState<unknown>(null);
   const [saveError, setSaveError] = useState<unknown>(null);
   const [uploadError, setUploadError] = useState<unknown>(null);
+  const [uploadProgress, setUploadProgress] = useState<ProjectFileUploadProgress | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const canBrowse = Boolean(props.server?.runner_connected && props.server.runner_capabilities?.project_files === true);
   const canEdit = Boolean(props.server?.runner_connected && props.server.runner_capabilities?.project_file_io === true);
-  const canUpload = Boolean(props.server?.runner_connected && props.server.runner_capabilities?.project_file_upload === true);
+  const canUpload = Boolean(props.server?.runner_connected && props.server.runner_capabilities?.project_file_upload_chunked === true);
   const blockedReason = runnerCapabilityBlockedReason(props.server, canBrowse ? "project_file_io" : "project_files", "file browsing");
-  const uploadBlockedReason = runnerCapabilityBlockedReason(props.server, "project_file_upload", "file upload");
+  const uploadBlockedReason = runnerCapabilityBlockedReason(props.server, "project_file_upload_chunked", "resumable file upload");
   const filesQuery = useQuery({
     queryKey: ["project-files", props.project.id, path],
     queryFn: () => api.listProjectFiles(props.project.id, path),
@@ -102,17 +102,25 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
     onError: (error) => setSaveError(error),
   });
   const uploadMutation = useMutation({
-    mutationFn: (body: { path: string; file: File; create_dirs?: boolean }) => api.uploadProjectFile(props.project.id, body),
+    mutationFn: (body: { path: string; file: File; create_dirs?: boolean }) =>
+      api.uploadProjectFile(props.project.id, {
+        ...body,
+        onProgress: setUploadProgress,
+      }),
     onSuccess: (result) => {
       const parent = parentDirectory(result.path);
       setUploadError(null);
+      setUploadProgress(null);
       setPath(parent);
       setManualPath(parent);
       void queryClient.invalidateQueries({ queryKey: ["project-files", props.project.id] });
       void queryClient.invalidateQueries({ queryKey: ["project-files", props.project.id, parent] });
       void queryClient.invalidateQueries({ queryKey: ["project-file-content", props.project.id, result.path] });
     },
-    onError: (error) => setUploadError(error),
+    onError: (error) => {
+      setUploadError(error);
+      setUploadProgress(null);
+    },
   });
   const actionMutation = useMutation({
     mutationFn: (body: { action: "create" | "rename" | "delete"; path: string; target_path?: string; is_dir?: boolean }) =>
@@ -150,6 +158,7 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
     setActionError(null);
     setSaveError(null);
     setUploadError(null);
+    setUploadProgress(null);
   }, [props.project.id]);
 
   useEffect(() => {
@@ -161,6 +170,7 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
     setActionError(null);
     setSaveError(null);
     setUploadError(null);
+    setUploadProgress(null);
     if (request.isDir) {
       setPath(request.path);
       setManualPath(request.path);
@@ -206,11 +216,14 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
     if (!file || !canUpload || uploadMutation.isPending) {
       return;
     }
-    if (file.size > maxUploadBytes) {
-      setUploadError(new ApiError(413, `File is too large. Upload files up to ${formatBytes(maxUploadBytes)}.`, "validation_error"));
-      return;
-    }
     setUploadError(null);
+    setUploadProgress({
+      filename: file.name || "upload.bin",
+      uploadedBytes: 0,
+      totalBytes: file.size,
+      complete: false,
+      resumed: false,
+    });
     uploadMutation.mutate({ path, file, create_dirs: true });
   };
 
@@ -280,6 +293,12 @@ export function ProjectFilesPanel(props: { server: Server | null; project: Proje
       </div>
 
       {uploadError ? <InlineNotice tone="danger">{errorNotice(uploadError, "Unable to upload file.").message}</InlineNotice> : null}
+      {uploadProgress ? (
+        <InlineNotice tone="info">
+          Uploading {uploadProgress.filename}: {formatBytes(uploadProgress.uploadedBytes)} / {formatBytes(uploadProgress.totalBytes)}
+          {uploadProgress.resumed ? " resumed" : ""}
+        </InlineNotice>
+      ) : null}
 
       <div className="directoryPathJump">
         <input

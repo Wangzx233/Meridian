@@ -415,6 +415,83 @@ func TestWriteProjectFileBytesPreservesBinaryContent(t *testing.T) {
 	}
 }
 
+func TestWriteProjectFileUploadChunkResumesAndCompletes(t *testing.T) {
+	root := t.TempDir()
+	first := []byte("hello ")
+	second := []byte("world")
+	totalSize := int64(len(first) + len(second))
+
+	started := writeProjectFileUploadChunk(root, "assets/blob.txt", "upload-1", 0, totalSize, first, true, false)
+	if started.Error != nil {
+		t.Fatalf("write first chunk error = %v", *started.Error)
+	}
+	if started.UploadedBytes != int64(len(first)) || started.ResumeOffset != int64(len(first)) || started.Complete {
+		t.Fatalf("first chunk result = %#v", started)
+	}
+	if _, err := os.Stat(filepath.Join(root, "assets", "blob.txt")); !os.IsNotExist(err) {
+		t.Fatalf("target should not exist before final chunk, stat error = %v", err)
+	}
+
+	status := projectFileUploadStatus(root, "assets/blob.txt", "upload-1", totalSize)
+	if status.Error != nil {
+		t.Fatalf("upload status error = %v", *status.Error)
+	}
+	if status.ResumeOffset != int64(len(first)) || status.Complete {
+		t.Fatalf("status = %#v", status)
+	}
+
+	completed := writeProjectFileUploadChunk(root, "assets/blob.txt", "upload-1", int64(len(first)), totalSize, second, true, true)
+	if completed.Error != nil {
+		t.Fatalf("write final chunk error = %v", *completed.Error)
+	}
+	if !completed.Complete || completed.Size != totalSize || completed.UploadedBytes != totalSize {
+		t.Fatalf("completed result = %#v", completed)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "assets", "blob.txt"))
+	if err != nil {
+		t.Fatalf("read completed upload: %v", err)
+	}
+	if !bytes.Equal(data, append(first, second...)) {
+		t.Fatalf("uploaded content = %q, want %q", data, append(first, second...))
+	}
+}
+
+func TestWriteProjectFileUploadChunkRejectsWrongOffset(t *testing.T) {
+	root := t.TempDir()
+	first := []byte("abc")
+	started := writeProjectFileUploadChunk(root, "upload.bin", "upload-2", 0, 6, first, true, false)
+	if started.Error != nil {
+		t.Fatalf("write first chunk error = %v", *started.Error)
+	}
+
+	result := writeProjectFileUploadChunk(root, "upload.bin", "upload-2", 1, 6, []byte("de"), true, false)
+	if result.Error == nil {
+		t.Fatalf("expected wrong offset error")
+	}
+	if result.ResumeOffset != int64(len(first)) {
+		t.Fatalf("resume offset = %d, want %d", result.ResumeOffset, len(first))
+	}
+	if _, err := os.Stat(filepath.Join(root, "upload.bin")); !os.IsNotExist(err) {
+		t.Fatalf("target should not exist after rejected offset, stat error = %v", err)
+	}
+}
+
+func TestWriteProjectFileUploadChunkSupportsEmptyFile(t *testing.T) {
+	root := t.TempDir()
+	result := writeProjectFileUploadChunk(root, "empty.bin", "empty", 0, 0, nil, true, true)
+	if result.Error != nil {
+		t.Fatalf("empty upload error = %v", *result.Error)
+	}
+	if !result.Complete || result.Size != 0 {
+		t.Fatalf("empty upload result = %#v", result)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "empty.bin")); err != nil {
+		t.Fatalf("read empty upload: %v", err)
+	} else if len(data) != 0 {
+		t.Fatalf("empty upload content = %q", data)
+	}
+}
+
 func TestProjectFileActionsStayInsideWorkdir(t *testing.T) {
 	root := t.TempDir()
 	created := createProjectFileEntry(root, "notes/todo.txt", false)

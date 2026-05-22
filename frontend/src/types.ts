@@ -131,6 +131,10 @@ export type ProjectFileActionResult = {
   target_path?: string;
   is_dir?: boolean;
   size?: number;
+  uploaded_bytes?: number;
+  total_size?: number;
+  complete?: boolean;
+  resume_offset?: number;
   modified_at?: Timestamp | null;
   error?: string | null;
 };

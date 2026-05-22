@@ -32,7 +32,14 @@ export const composerMaxHeight = 300;
 
 export const defaultControlUrl = (import.meta.env.VITE_CONTROL_URL ?? window.location.origin).replace(/\/$/, "");
 
-export const runnerFeatureCapabilities = ["fs_list", "project_files", "project_file_io", "project_file_upload", "project_terminal"] as const;
+export const runnerFeatureCapabilities = [
+  "fs_list",
+  "project_files",
+  "project_file_io",
+  "project_file_upload",
+  "project_file_upload_chunked",
+  "project_terminal",
+] as const;
 
 export const modelOptions = ["", "gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.4-mini"];
 

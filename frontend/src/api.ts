@@ -28,6 +28,7 @@ import type {
 } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "/api/v1").replace(/\/$/, "");
+const projectFileUploadChunkBytes = 1024 * 1024;
 
 export class ApiError extends Error {
   code: string;
@@ -109,7 +110,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
-function fileToBase64(file: File): Promise<string> {
+function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new ApiError(0, "Unable to read the selected file.", "file_read_error"));
@@ -118,7 +119,7 @@ function fileToBase64(file: File): Promise<string> {
       const comma = result.indexOf(",");
       resolve(comma >= 0 ? result.slice(comma + 1) : result);
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(blob);
   });
 }
 
@@ -138,6 +139,116 @@ function queryString(params: Record<string, string | number | null | undefined>)
   }
   const value = search.toString();
   return value ? `?${value}` : "";
+}
+
+function uploadIDForFile(path: string, file: File) {
+  const name = file.name || "upload.bin";
+  const seed = `${path}/${name}:${file.size}:${file.lastModified}`;
+  let hash = 2166136261;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash ^= seed.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `up-${file.size}-${file.lastModified || 0}-${(hash >>> 0).toString(16)}`;
+}
+
+export type ProjectFileUploadProgress = {
+  filename: string;
+  uploadedBytes: number;
+  totalBytes: number;
+  complete: boolean;
+  resumed: boolean;
+};
+
+type UploadProjectFileBody = {
+  path: string;
+  file: File;
+  create_dirs?: boolean;
+  onProgress?: (progress: ProjectFileUploadProgress) => void;
+};
+
+async function uploadProjectFileChunked(projectId: string, body: UploadProjectFileBody) {
+  const filename = body.file.name || "upload.bin";
+  const uploadId = uploadIDForFile(body.path, body.file);
+  const status = await request<ProjectFileActionResult>(
+    `/projects/${encodeURIComponent(projectId)}/files/upload${queryString({
+      path: body.path,
+      filename,
+      upload_id: uploadId,
+      total_size: body.file.size,
+    })}`,
+  );
+  let offset = Math.min(Math.max(status.resume_offset ?? status.uploaded_bytes ?? 0, 0), body.file.size);
+  const resumed = offset > 0;
+  body.onProgress?.({ filename, uploadedBytes: offset, totalBytes: body.file.size, complete: false, resumed });
+
+  if (body.file.size === 0) {
+    const result = await request<ProjectFileActionResult>(`/projects/${encodeURIComponent(projectId)}/files/upload`, {
+      method: "POST",
+      body: JSON.stringify({
+        path: body.path,
+        filename,
+        upload_id: uploadId,
+        offset: 0,
+        total_size: 0,
+        content_base64: "",
+        create_dirs: body.create_dirs ?? true,
+        final: true,
+      }),
+    });
+    body.onProgress?.({ filename, uploadedBytes: 0, totalBytes: 0, complete: true, resumed });
+    return result;
+  }
+
+  let result: ProjectFileActionResult = status;
+  while (offset < body.file.size) {
+    const nextOffset = Math.min(offset + projectFileUploadChunkBytes, body.file.size);
+    const contentBase64 = await blobToBase64(body.file.slice(offset, nextOffset));
+    result = await request<ProjectFileActionResult>(`/projects/${encodeURIComponent(projectId)}/files/upload`, {
+      method: "POST",
+      body: JSON.stringify({
+        path: body.path,
+        filename,
+        upload_id: uploadId,
+        offset,
+        total_size: body.file.size,
+        content_base64: contentBase64,
+        create_dirs: body.create_dirs ?? true,
+        final: nextOffset === body.file.size,
+      }),
+    });
+    offset = Math.min(Math.max(result.resume_offset ?? result.uploaded_bytes ?? nextOffset, 0), body.file.size);
+    body.onProgress?.({
+      filename,
+      uploadedBytes: offset,
+      totalBytes: body.file.size,
+      complete: Boolean(result.complete) || offset === body.file.size,
+      resumed,
+    });
+  }
+  if (!result.complete) {
+    result = await request<ProjectFileActionResult>(`/projects/${encodeURIComponent(projectId)}/files/upload`, {
+      method: "POST",
+      body: JSON.stringify({
+        path: body.path,
+        filename,
+        upload_id: uploadId,
+        offset: body.file.size,
+        total_size: body.file.size,
+        content_base64: "",
+        create_dirs: body.create_dirs ?? true,
+        final: true,
+      }),
+    });
+    body.onProgress?.({
+      filename,
+      uploadedBytes: body.file.size,
+      totalBytes: body.file.size,
+      complete: Boolean(result.complete),
+      resumed,
+    });
+  }
+  return result;
 }
 
 export const api = {
@@ -181,19 +292,7 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
-  uploadProjectFile: (projectId: string, body: { path: string; file: File; create_dirs?: boolean }) => {
-    return fileToBase64(body.file).then((contentBase64) =>
-      request<ProjectFileActionResult>(`/projects/${encodeURIComponent(projectId)}/files/upload`, {
-        method: "POST",
-        body: JSON.stringify({
-          path: body.path,
-          filename: body.file.name || "upload.bin",
-          content_base64: contentBase64,
-          create_dirs: body.create_dirs ?? true,
-        }),
-      }),
-    );
-  },
+  uploadProjectFile: (projectId: string, body: UploadProjectFileBody) => uploadProjectFileChunked(projectId, body),
   projectFileAction: (
     projectId: string,
     body: { action: "create" | "rename" | "delete"; path: string; target_path?: string; is_dir?: boolean },

@@ -102,6 +102,7 @@ can be added later without changing the top-level shape.
     "project_files": true,
     "project_file_io": true,
     "project_file_upload": true,
+    "project_file_upload_chunked": true,
     "project_terminal": true,
     "project_command": true,
     "shutdown": true
@@ -125,7 +126,7 @@ websocket for `runner_id`. `runner_connection` describes that active process and
 is omitted when no runner is connected. File browsing, file editing, and PTY
 terminal sessions also require the corresponding values in
 `runner_capabilities`; a connected runner without `project_file_io`,
-`project_file_upload`, or `project_terminal` is an old runner binary.
+`project_file_upload_chunked`, or `project_terminal` is an old runner binary.
 
 ### Project
 
@@ -503,6 +504,7 @@ DELETE /api/v1/projects/{project_id}
 GET  /api/v1/projects/{project_id}/files?path={relative_project_path}
 GET  /api/v1/projects/{project_id}/files/content?path={relative_project_path}
 PUT  /api/v1/projects/{project_id}/files/content
+GET  /api/v1/projects/{project_id}/files/upload?path={dir}&filename={name}&upload_id={id}&total_size={bytes}
 POST /api/v1/projects/{project_id}/files/upload
 POST /api/v1/projects/{project_id}/files/actions
 WS   /api/v1/projects/{project_id}/terminal
@@ -581,8 +583,40 @@ Project file upload request:
 {
   "path": "docs",
   "filename": "diagram.png",
+  "upload_id": "up-184329-1789999000000-dbcac612",
+  "offset": 0,
+  "total_size": 184329,
   "content_base64": "iVBORw0KGgo=",
-  "create_dirs": true
+  "create_dirs": true,
+  "final": false
+}
+```
+
+Project file upload status response:
+
+```json
+{
+  "root": "D:\\go\\workplace",
+  "path": "docs/diagram.png",
+  "uploaded_bytes": 1048576,
+  "total_size": 1843290,
+  "resume_offset": 1048576,
+  "complete": false
+}
+```
+
+Final project file upload response:
+
+```json
+{
+  "root": "D:\\go\\workplace",
+  "path": "docs/diagram.png",
+  "is_dir": false,
+  "size": 1843290,
+  "uploaded_bytes": 1843290,
+  "total_size": 1843290,
+  "resume_offset": 1843290,
+  "complete": true
 }
 ```
 
@@ -599,10 +633,17 @@ Project file action request:
 Rules:
 
 - File content endpoints require `project_file_io`.
-- File upload requires `project_file_upload`, writes the selected browser file
-  into `path` under the project workdir, preserves binary bytes, and currently
-  rejects uploads above 5 MiB. The endpoint also accepts the older multipart
-  form shape for compatibility.
+- Resumable file upload requires `project_file_upload_chunked`, writes the
+  selected browser file into `path` under the project workdir, and preserves
+  binary bytes. The browser first calls `GET /files/upload` to read the runner's
+  partial-file offset, then sends base64-encoded chunks to `POST /files/upload`
+  with the same `upload_id`, absolute byte `offset`, `total_size`, and `final`.
+  Each chunk is limited to 1 MiB of decoded file content. The runner stores
+  unfinished chunks in a hidden `.part` file beside the target and replaces the
+  target only after the final chunk is complete.
+- The endpoint still accepts the older one-shot JSON or multipart upload shape
+  for compatibility with existing clients and runners. That compatibility path
+  requires `project_file_upload` and rejects uploads above 5 MiB.
 - `action` may be `create`, `rename`, or `delete`; `create` also accepts
   `is_dir`.
 - The runner resolves all paths inside `project.workdir` and rejects paths that
@@ -1131,6 +1172,7 @@ Direction: runner to control plane.
       "project_files": true,
       "project_file_io": true,
       "project_file_upload": true,
+      "project_file_upload_chunked": true,
       "project_terminal": true,
       "project_command": true,
       "codex_options": true,
@@ -1607,6 +1649,90 @@ the request.
 }
 ```
 
+### `project.file.upload.status`
+
+Direction: control plane to runner.
+
+```json
+{
+  "type": "project.file.upload.status",
+  "message_id": "msg_526",
+  "sent_at": "2026-05-11T08:04:23Z",
+  "payload": {
+    "workdir": "D:\\go\\workplace",
+    "path": "assets/video.mp4",
+    "upload_id": "up-1843290-1789999000000-dbcac612",
+    "total_size": 1843290
+  }
+}
+```
+
+### `project.file.upload.status.response`
+
+Direction: runner to control plane. The response uses the same `message_id` as
+the request.
+
+```json
+{
+  "type": "project.file.upload.status.response",
+  "message_id": "msg_526",
+  "sent_at": "2026-05-11T08:04:23Z",
+  "payload": {
+    "root": "D:\\go\\workplace",
+    "path": "assets/video.mp4",
+    "uploaded_bytes": 1048576,
+    "total_size": 1843290,
+    "resume_offset": 1048576,
+    "complete": false
+  }
+}
+```
+
+### `project.file.upload.chunk`
+
+Direction: control plane to runner.
+
+```json
+{
+  "type": "project.file.upload.chunk",
+  "message_id": "msg_527",
+  "sent_at": "2026-05-11T08:04:24Z",
+  "payload": {
+    "workdir": "D:\\go\\workplace",
+    "path": "assets/video.mp4",
+    "upload_id": "up-1843290-1789999000000-dbcac612",
+    "offset": 1048576,
+    "total_size": 1843290,
+    "content_base64": "iVBORw0KGgo=",
+    "create_dirs": true,
+    "final": true
+  }
+}
+```
+
+### `project.file.upload.chunk.response`
+
+Direction: runner to control plane. The response uses the same `message_id` as
+the request.
+
+```json
+{
+  "type": "project.file.upload.chunk.response",
+  "message_id": "msg_527",
+  "sent_at": "2026-05-11T08:04:24Z",
+  "payload": {
+    "root": "D:\\go\\workplace",
+    "path": "assets/video.mp4",
+    "is_dir": false,
+    "size": 1843290,
+    "uploaded_bytes": 1843290,
+    "total_size": 1843290,
+    "resume_offset": 1843290,
+    "complete": true
+  }
+}
+```
+
 ### `project.file.action`
 
 Direction: control plane to runner.
@@ -1645,9 +1771,10 @@ the request.
 
 Rules:
 
-- `project.file.write.response`, `project.file.upload.response`, and
-  `project.file.action.response` return the affected project-root-relative path
-  and metadata.
+- `project.file.write.response`, `project.file.upload.response`,
+  `project.file.upload.status.response`, `project.file.upload.chunk.response`,
+  and `project.file.action.response` return the affected project-root-relative
+  path and metadata.
 - The runner must reject writes, uploads, renames, and deletes that escape
   `workdir`.
 - The runner must not delete the project root.

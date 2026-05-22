@@ -54,13 +54,17 @@ type ProjectFileContent struct {
 }
 
 type ProjectFileActionResult struct {
-	Root       string     `json:"root"`
-	Path       string     `json:"path"`
-	TargetPath string     `json:"target_path,omitempty"`
-	IsDir      bool       `json:"is_dir,omitempty"`
-	Size       int64      `json:"size,omitempty"`
-	ModifiedAt *time.Time `json:"modified_at,omitempty"`
-	Error      *string    `json:"error,omitempty"`
+	Root          string     `json:"root"`
+	Path          string     `json:"path"`
+	TargetPath    string     `json:"target_path,omitempty"`
+	IsDir         bool       `json:"is_dir,omitempty"`
+	Size          int64      `json:"size,omitempty"`
+	UploadedBytes int64      `json:"uploaded_bytes,omitempty"`
+	TotalSize     int64      `json:"total_size,omitempty"`
+	Complete      bool       `json:"complete,omitempty"`
+	ResumeOffset  int64      `json:"resume_offset,omitempty"`
+	ModifiedAt    *time.Time `json:"modified_at,omitempty"`
+	Error         *string    `json:"error,omitempty"`
 }
 
 const maxProjectFileReadBytes int64 = 2 * 1024 * 1024
@@ -255,6 +259,200 @@ func writeProjectFileBytes(root, path string, content []byte, createDirs bool) P
 		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, Error: &msg}
 	}
 	return projectFileActionInfo(cleanRoot, target, relPath, "")
+}
+
+func projectFileUploadStatus(root, path, uploadID string, totalSize int64) ProjectFileActionResult {
+	cleanRoot, target, relPath, err := resolveProjectWritablePath(root, path)
+	if err != nil {
+		msg := err.Error()
+		return ProjectFileActionResult{Root: root, Path: path, TotalSize: totalSize, Error: &msg}
+	}
+	if totalSize < 0 {
+		msg := "total_size must be non-negative"
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
+	}
+	if info, err := os.Stat(target); err == nil {
+		if info.IsDir() {
+			msg := "path is a directory"
+			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		msg := err.Error()
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
+	}
+
+	partPath, err := projectFileUploadPartPath(target, uploadID)
+	if err != nil {
+		msg := err.Error()
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
+	}
+	info, err := os.Stat(partPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize}
+		}
+		msg := err.Error()
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
+	}
+	if info.IsDir() {
+		msg := "partial upload path is a directory"
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
+	}
+	if info.Size() > totalSize {
+		msg := "partial upload is larger than total_size; restart the upload"
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: info.Size(), TotalSize: totalSize, ResumeOffset: 0, Error: &msg}
+	}
+	return ProjectFileActionResult{
+		Root:          cleanRoot,
+		Path:          relPath,
+		Size:          info.Size(),
+		UploadedBytes: info.Size(),
+		TotalSize:     totalSize,
+		ResumeOffset:  info.Size(),
+		ModifiedAt:    ptrTime(info.ModTime()),
+	}
+}
+
+func writeProjectFileUploadChunk(root, path, uploadID string, offset, totalSize int64, content []byte, createDirs, final bool) ProjectFileActionResult {
+	cleanRoot, target, relPath, err := resolveProjectWritablePath(root, path)
+	if err != nil {
+		msg := err.Error()
+		return ProjectFileActionResult{Root: root, Path: path, TotalSize: totalSize, Error: &msg}
+	}
+	if offset < 0 || totalSize < 0 {
+		msg := "offset and total_size must be non-negative"
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
+	}
+	uploadedBytes := offset + int64(len(content))
+	if uploadedBytes > totalSize {
+		msg := "upload chunk exceeds total_size"
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: offset, TotalSize: totalSize, ResumeOffset: offset, Error: &msg}
+	}
+	if final && uploadedBytes != totalSize {
+		msg := "final upload chunk must end at total_size"
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: uploadedBytes, TotalSize: totalSize, ResumeOffset: uploadedBytes, Error: &msg}
+	}
+	if info, err := os.Stat(target); err == nil && info.IsDir() {
+		msg := "path is a directory"
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		msg := err.Error()
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
+	}
+	if createDirs {
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			msg := err.Error()
+			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
+		}
+	}
+	partPath, err := projectFileUploadPartPath(target, uploadID)
+	if err != nil {
+		msg := err.Error()
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
+	}
+	if offset == 0 {
+		if err := os.Remove(partPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			msg := err.Error()
+			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
+		}
+	} else {
+		info, err := os.Stat(partPath)
+		if err != nil {
+			resumeOffset := int64(0)
+			msg := err.Error()
+			if errors.Is(err, os.ErrNotExist) {
+				msg = "partial upload was not found; restart the upload"
+			}
+			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: resumeOffset, TotalSize: totalSize, ResumeOffset: resumeOffset, Error: &msg}
+		}
+		if info.IsDir() {
+			msg := "partial upload path is a directory"
+			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, TotalSize: totalSize, Error: &msg}
+		}
+		if info.Size() != offset {
+			msg := "upload offset mismatch; resume from the returned offset"
+			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: info.Size(), TotalSize: totalSize, ResumeOffset: info.Size(), Error: &msg}
+		}
+	}
+
+	file, err := os.OpenFile(partPath, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		msg := err.Error()
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: offset, TotalSize: totalSize, ResumeOffset: offset, Error: &msg}
+	}
+	if len(content) > 0 {
+		if n, err := file.WriteAt(content, offset); err != nil {
+			_ = file.Close()
+			msg := err.Error()
+			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: offset + int64(n), TotalSize: totalSize, ResumeOffset: offset + int64(n), Error: &msg}
+		} else if n != len(content) {
+			_ = file.Close()
+			msg := "short write"
+			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: offset + int64(n), TotalSize: totalSize, ResumeOffset: offset + int64(n), Error: &msg}
+		}
+	}
+	if err := file.Close(); err != nil {
+		msg := err.Error()
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: uploadedBytes, TotalSize: totalSize, ResumeOffset: uploadedBytes, Error: &msg}
+	}
+
+	if !final {
+		return ProjectFileActionResult{
+			Root:          cleanRoot,
+			Path:          relPath,
+			Size:          uploadedBytes,
+			UploadedBytes: uploadedBytes,
+			TotalSize:     totalSize,
+			ResumeOffset:  uploadedBytes,
+		}
+	}
+	if runtime.GOOS == "windows" {
+		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+			msg := err.Error()
+			return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: uploadedBytes, TotalSize: totalSize, ResumeOffset: uploadedBytes, Error: &msg}
+		}
+	}
+	if err := os.Rename(partPath, target); err != nil {
+		msg := err.Error()
+		return ProjectFileActionResult{Root: cleanRoot, Path: relPath, UploadedBytes: uploadedBytes, TotalSize: totalSize, ResumeOffset: uploadedBytes, Error: &msg}
+	}
+	result := projectFileActionInfo(cleanRoot, target, relPath, "")
+	result.UploadedBytes = uploadedBytes
+	result.TotalSize = totalSize
+	result.ResumeOffset = uploadedBytes
+	result.Complete = result.Error == nil
+	return result
+}
+
+func projectFileUploadPartPath(target, uploadID string) (string, error) {
+	safeID := sanitizeUploadID(uploadID)
+	if safeID == "" {
+		return "", os.ErrInvalid
+	}
+	return filepath.Join(filepath.Dir(target), "."+filepath.Base(target)+"."+safeID+".part"), nil
+}
+
+func sanitizeUploadID(uploadID string) string {
+	uploadID = strings.TrimSpace(uploadID)
+	var b strings.Builder
+	for _, ch := range uploadID {
+		switch {
+		case ch >= 'a' && ch <= 'z':
+			b.WriteRune(ch)
+		case ch >= 'A' && ch <= 'Z':
+			b.WriteRune(ch)
+		case ch >= '0' && ch <= '9':
+			b.WriteRune(ch)
+		case ch == '.' || ch == '_' || ch == '-':
+			b.WriteRune(ch)
+		default:
+			b.WriteByte('_')
+		}
+		if b.Len() >= 96 {
+			break
+		}
+	}
+	return strings.Trim(b.String(), "._-")
 }
 
 func createProjectFileEntry(root, path string, isDir bool) ProjectFileActionResult {

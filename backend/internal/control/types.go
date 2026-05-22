@@ -138,6 +138,24 @@ type ProjectFileUploadRequestPayload struct {
 	CreateDirs    bool   `json:"create_dirs"`
 }
 
+type ProjectFileUploadStatusRequestPayload struct {
+	Workdir   string `json:"workdir"`
+	Path      string `json:"path"`
+	UploadID  string `json:"upload_id"`
+	TotalSize int64  `json:"total_size"`
+}
+
+type ProjectFileUploadChunkRequestPayload struct {
+	Workdir       string `json:"workdir"`
+	Path          string `json:"path"`
+	UploadID      string `json:"upload_id"`
+	Offset        int64  `json:"offset"`
+	TotalSize     int64  `json:"total_size"`
+	ContentBase64 string `json:"content_base64"`
+	CreateDirs    bool   `json:"create_dirs"`
+	Final         bool   `json:"final"`
+}
+
 type ProjectFileActionRequestPayload struct {
 	Workdir    string `json:"workdir"`
 	Action     string `json:"action"`
@@ -147,13 +165,17 @@ type ProjectFileActionRequestPayload struct {
 }
 
 type ProjectFileActionResult struct {
-	Root       string     `json:"root"`
-	Path       string     `json:"path"`
-	TargetPath string     `json:"target_path,omitempty"`
-	IsDir      bool       `json:"is_dir,omitempty"`
-	Size       int64      `json:"size,omitempty"`
-	ModifiedAt *time.Time `json:"modified_at,omitempty"`
-	Error      *string    `json:"error,omitempty"`
+	Root          string     `json:"root"`
+	Path          string     `json:"path"`
+	TargetPath    string     `json:"target_path,omitempty"`
+	IsDir         bool       `json:"is_dir,omitempty"`
+	Size          int64      `json:"size,omitempty"`
+	UploadedBytes int64      `json:"uploaded_bytes,omitempty"`
+	TotalSize     int64      `json:"total_size,omitempty"`
+	Complete      bool       `json:"complete,omitempty"`
+	ResumeOffset  int64      `json:"resume_offset,omitempty"`
+	ModifiedAt    *time.Time `json:"modified_at,omitempty"`
+	Error         *string    `json:"error,omitempty"`
 }
 
 type ProjectCommandRequestPayload struct {

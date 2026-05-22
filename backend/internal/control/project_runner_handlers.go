@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,7 +16,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const maxProjectFileUploadBytes int64 = 5 * 1024 * 1024
+const (
+	maxProjectFileLegacyUploadBytes int64 = 5 * 1024 * 1024
+	maxProjectFileUploadChunkBytes  int64 = 1024 * 1024
+)
 
 func (a *API) handleProjectFiles(w http.ResponseWriter, r *http.Request, projectID string) {
 	if r.Method != http.MethodGet {
@@ -65,6 +69,10 @@ func (a *API) handleProjectFileRoutes(w http.ResponseWriter, r *http.Request, pr
 }
 
 func (a *API) handleProjectFileUpload(w http.ResponseWriter, r *http.Request, projectID string) {
+	if r.Method == http.MethodGet {
+		a.handleProjectFileUploadStatus(w, r, projectID)
+		return
+	}
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
 		return
@@ -74,8 +82,8 @@ func (a *API) handleProjectFileUpload(w http.ResponseWriter, r *http.Request, pr
 		a.handleProjectFileUploadJSON(w, r, projectID)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxProjectFileUploadBytes+1024*1024)
-	if err := r.ParseMultipartForm(maxProjectFileUploadBytes); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, maxProjectFileLegacyUploadBytes+1024*1024)
+	if err := r.ParseMultipartForm(maxProjectFileLegacyUploadBytes); err != nil {
 		writeError(w, http.StatusBadRequest, "validation_error", "Invalid multipart upload.", nil)
 		return
 	}
@@ -94,16 +102,16 @@ func (a *API) handleProjectFileUpload(w http.ResponseWriter, r *http.Request, pr
 		writeError(w, http.StatusBadRequest, "validation_error", "Filename is required.", nil)
 		return
 	}
-	if header.Size > maxProjectFileUploadBytes {
+	if header.Size > maxProjectFileLegacyUploadBytes {
 		writeError(w, http.StatusRequestEntityTooLarge, "validation_error", "File is too large.", nil)
 		return
 	}
-	data, err := io.ReadAll(io.LimitReader(file, maxProjectFileUploadBytes+1))
+	data, err := io.ReadAll(io.LimitReader(file, maxProjectFileLegacyUploadBytes+1))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "validation_error", "Unable to read uploaded file.", nil)
 		return
 	}
-	if int64(len(data)) > maxProjectFileUploadBytes {
+	if int64(len(data)) > maxProjectFileLegacyUploadBytes {
 		writeError(w, http.StatusRequestEntityTooLarge, "validation_error", "File is too large.", nil)
 		return
 	}
@@ -115,15 +123,43 @@ func (a *API) handleProjectFileUpload(w http.ResponseWriter, r *http.Request, pr
 	a.forwardProjectFileUpload(w, r, projectID, uploadTargetPath(targetDir, filename), data, createDirs)
 }
 
+func (a *API) handleProjectFileUploadStatus(w http.ResponseWriter, r *http.Request, projectID string) {
+	filename := uploadFilename(r.URL.Query().Get("filename"))
+	if filename == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "Filename is required.", nil)
+		return
+	}
+	uploadID := strings.TrimSpace(r.URL.Query().Get("upload_id"))
+	if uploadID == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "upload_id is required.", nil)
+		return
+	}
+	totalSize, ok := parseNonNegativeInt64(r.URL.Query().Get("total_size"))
+	if !ok {
+		writeError(w, http.StatusBadRequest, "validation_error", "total_size must be a non-negative integer.", nil)
+		return
+	}
+	targetPath := uploadTargetPath(r.URL.Query().Get("path"), filename)
+	a.forwardProjectFileUploadStatus(w, r, projectID, targetPath, uploadID, totalSize)
+}
+
 func (a *API) handleProjectFileUploadJSON(w http.ResponseWriter, r *http.Request, projectID string) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxProjectFileUploadBytes*2)
+	r.Body = http.MaxBytesReader(w, r.Body, maxProjectFileLegacyUploadBytes*2+1024*1024)
 	var in struct {
 		Path          string `json:"path"`
 		Filename      string `json:"filename"`
 		ContentBase64 string `json:"content_base64"`
+		UploadID      string `json:"upload_id"`
+		Offset        int64  `json:"offset"`
+		TotalSize     int64  `json:"total_size"`
 		CreateDirs    bool   `json:"create_dirs"`
+		Final         bool   `json:"final"`
 	}
 	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if strings.TrimSpace(in.UploadID) != "" || in.Offset > 0 || in.TotalSize > 0 || in.Final {
+		a.handleProjectFileUploadChunkJSON(w, r, projectID, in.Path, in.Filename, in.UploadID, in.Offset, in.TotalSize, in.ContentBase64, in.CreateDirs, in.Final)
 		return
 	}
 	content, err := base64.StdEncoding.DecodeString(strings.TrimSpace(in.ContentBase64))
@@ -131,8 +167,8 @@ func (a *API) handleProjectFileUploadJSON(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "validation_error", "Invalid base64 file content.", nil)
 		return
 	}
-	if int64(len(content)) > maxProjectFileUploadBytes {
-		writeError(w, http.StatusRequestEntityTooLarge, "validation_error", "File is too large.", nil)
+	if int64(len(content)) > maxProjectFileLegacyUploadBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "validation_error", "This request used the legacy one-shot upload path, which only accepts files up to 5 MiB. Refresh the page after deploying the latest frontend so uploads use resumable chunks.", map[string]any{"legacy_limit_bytes": maxProjectFileLegacyUploadBytes, "resumable_capability": "project_file_upload_chunked"})
 		return
 	}
 	filename := uploadFilename(in.Filename)
@@ -142,6 +178,47 @@ func (a *API) handleProjectFileUploadJSON(w http.ResponseWriter, r *http.Request
 	}
 	targetPath := uploadTargetPath(in.Path, filename)
 	a.forwardProjectFileUpload(w, r, projectID, targetPath, content, in.CreateDirs)
+}
+
+func (a *API) handleProjectFileUploadChunkJSON(w http.ResponseWriter, r *http.Request, projectID, targetDir, rawFilename, uploadID string, offset, totalSize int64, contentBase64 string, createDirs, final bool) {
+	filename := uploadFilename(rawFilename)
+	if filename == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "Filename is required.", nil)
+		return
+	}
+	uploadID = strings.TrimSpace(uploadID)
+	if uploadID == "" {
+		writeError(w, http.StatusBadRequest, "validation_error", "upload_id is required.", nil)
+		return
+	}
+	if offset < 0 || totalSize < 0 {
+		writeError(w, http.StatusBadRequest, "validation_error", "offset and total_size must be non-negative.", nil)
+		return
+	}
+	content, err := base64.StdEncoding.DecodeString(strings.TrimSpace(contentBase64))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation_error", "Invalid base64 file content.", nil)
+		return
+	}
+	if int64(len(content)) > maxProjectFileUploadChunkBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "validation_error", "Upload chunk is too large.", nil)
+		return
+	}
+	uploadedBytes := offset + int64(len(content))
+	if uploadedBytes > totalSize {
+		writeError(w, http.StatusBadRequest, "validation_error", "Upload chunk exceeds total_size.", nil)
+		return
+	}
+	if final && uploadedBytes != totalSize {
+		writeError(w, http.StatusBadRequest, "validation_error", "Final upload chunk must end at total_size.", nil)
+		return
+	}
+	if totalSize == 0 && (!final || len(content) != 0 || offset != 0) {
+		writeError(w, http.StatusBadRequest, "validation_error", "Empty uploads must send one final zero-byte chunk.", nil)
+		return
+	}
+	targetPath := uploadTargetPath(targetDir, filename)
+	a.forwardProjectFileUploadChunk(w, r, projectID, targetPath, uploadID, offset, totalSize, content, createDirs, final)
 }
 
 func (a *API) forwardProjectFileUpload(w http.ResponseWriter, r *http.Request, projectID, targetPath string, data []byte, createDirs bool) {
@@ -169,6 +246,73 @@ func (a *API) forwardProjectFileUpload(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (a *API) forwardProjectFileUploadStatus(w http.ResponseWriter, r *http.Request, projectID, targetPath, uploadID string, totalSize int64) {
+	project, server, ok := a.projectAndServerForRunnerRequest(w, r, projectID, "project_file_upload_chunked")
+	if !ok {
+		return
+	}
+	env, err := a.runners.Request(server.RunnerID, "project.file.upload.status", ProjectFileUploadStatusRequestPayload{
+		Workdir:   project.Workdir,
+		Path:      targetPath,
+		UploadID:  uploadID,
+		TotalSize: totalSize,
+	}, 10*time.Second)
+	if err != nil {
+		a.respondRunnerRequestError(w, server.RunnerID, "project file upload status request", err)
+		return
+	}
+	var result ProjectFileActionResult
+	if !decodeEnvelopePayload(env.Payload, &result, a, "project.file.upload.status.response") {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Invalid runner response.", nil)
+		return
+	}
+	if result.Error != nil {
+		writeError(w, http.StatusBadRequest, "validation_error", *result.Error, nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (a *API) forwardProjectFileUploadChunk(w http.ResponseWriter, r *http.Request, projectID, targetPath, uploadID string, offset, totalSize int64, data []byte, createDirs, final bool) {
+	project, server, ok := a.projectAndServerForRunnerRequest(w, r, projectID, "project_file_upload_chunked")
+	if !ok {
+		return
+	}
+	env, err := a.runners.Request(server.RunnerID, "project.file.upload.chunk", ProjectFileUploadChunkRequestPayload{
+		Workdir:       project.Workdir,
+		Path:          targetPath,
+		UploadID:      uploadID,
+		Offset:        offset,
+		TotalSize:     totalSize,
+		ContentBase64: base64.StdEncoding.EncodeToString(data),
+		CreateDirs:    createDirs,
+		Final:         final,
+	}, 30*time.Second)
+	if err != nil {
+		a.respondRunnerRequestError(w, server.RunnerID, "project file upload chunk request", err)
+		return
+	}
+	var result ProjectFileActionResult
+	if !decodeEnvelopePayload(env.Payload, &result, a, "project.file.upload.chunk.response") {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Invalid runner response.", nil)
+		return
+	}
+	if result.Error != nil {
+		writeError(w, http.StatusBadRequest, "validation_error", *result.Error, nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func parseNonNegativeInt64(value string) (int64, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	out, err := strconv.ParseInt(value, 10, 64)
+	return out, err == nil && out >= 0
 }
 
 func uploadFilename(filename string) string {

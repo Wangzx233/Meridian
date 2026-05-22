@@ -214,6 +214,33 @@ func waitForRunnerConnected(t *testing.T, api *API, runnerID string) {
 	t.Fatalf("runner %s did not connect", runnerID)
 }
 
+func TestTusPatchRejectsNonFinalEmptyChunk(t *testing.T) {
+	token, err := encodeProjectFileTusToken(projectFileTusToken{
+		ProjectID:  "project_1",
+		Path:       "upload.bin",
+		UploadID:   "upload_1",
+		TotalSize:  16,
+		CreateDirs: true,
+	})
+	if err != nil {
+		t.Fatalf("encode tus token: %v", err)
+	}
+
+	api := NewAPI(nil, nil, AuthConfig{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/project_1/files/upload/tus/"+token, http.NoBody)
+	req.Header.Set("Content-Type", "application/offset+octet-stream")
+	req.Header.Set("Upload-Offset", "0")
+	api.handleProjectFileTusResource(rec, req, "project_1", token)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Upload chunk must not be empty") {
+		t.Fatalf("body missing empty chunk error: %s", rec.Body.String())
+	}
+}
+
 func mustJSON(t *testing.T, value any) json.RawMessage {
 	t.Helper()
 	raw, err := json.Marshal(value)

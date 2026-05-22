@@ -642,11 +642,11 @@ Rules:
   `/files/upload/tus`. The web UI uses `tus-js-client`, creates an upload with
   `POST`, resumes with `HEAD`, and sends binary `PATCH` chunks with
   `Upload-Offset`. If the connected runner supports
-  `project_file_upload_stream`, the web UI does not force a small tus chunk
-  size and the control plane streams the PATCH body to the runner file-transfer
-  WebSocket as a binary frame instead of reading the whole chunk into memory.
-  Older runners fall back to `project.file.upload.chunk`, where each PATCH body
-  is limited to 4 MiB.
+  `project_file_upload_stream`, the web UI uses 16 MiB tus chunks and the
+  control plane streams each PATCH body to the runner file-transfer WebSocket as
+  a binary frame instead of reading the whole chunk into memory. Older runners
+  fall back to `project.file.upload.chunk`, where each PATCH body is limited to
+  4 MiB.
 - Parallel tus uploads are not enabled yet because tus-js-client requires the
   tus Concatenation extension for that mode. Enabling it would require separate
   partial upload resources plus a runner-side concat step before replacing the

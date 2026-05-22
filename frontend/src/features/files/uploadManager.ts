@@ -3,6 +3,7 @@ import { apiBaseUrl, ApiError } from "../../api";
 import type { ProjectFileActionResult } from "../../types";
 
 const fallbackUploadChunkBytes = 4 * 1024 * 1024;
+const streamUploadChunkBytes = 16 * 1024 * 1024;
 
 export type ProjectFileUploadProgress = {
   id: string;
@@ -84,7 +85,7 @@ export function uploadProjectFile(input: UploadProjectFileInput) {
   const endpoint = `${apiBaseUrl}/projects/${encodeURIComponent(input.projectId)}/files/upload/tus`;
   const upload = new Upload(input.file, {
     endpoint,
-    chunkSize: input.stream_upload ? undefined : fallbackUploadChunkBytes,
+    chunkSize: input.stream_upload ? streamUploadChunkBytes : fallbackUploadChunkBytes,
     retryDelays: [0, 1000, 3000, 5000],
     removeFingerprintOnSuccess: true,
     metadata: {
@@ -96,6 +97,13 @@ export function uploadProjectFile(input: UploadProjectFileInput) {
     onProgress(uploadedBytes, totalBytes) {
       updateUpload(id, {
         sentBytes: uploadedBytes,
+        totalBytes,
+      });
+    },
+    onChunkComplete(_chunkSize, bytesAccepted, totalBytes) {
+      updateUpload(id, {
+        uploadedBytes: Math.min(bytesAccepted, input.file.size),
+        sentBytes: Math.min(bytesAccepted, input.file.size),
         totalBytes,
       });
     },

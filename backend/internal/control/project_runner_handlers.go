@@ -238,6 +238,10 @@ func (a *API) handleProjectFileTusResource(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusBadRequest, "validation_error", "Upload-Offset must be a non-negative integer.", nil)
 			return
 		}
+		if r.ContentLength == 0 && offset < token.TotalSize {
+			writeError(w, http.StatusBadRequest, "validation_error", "Upload chunk must not be empty before the final offset.", nil)
+			return
+		}
 		project, server, ok := a.projectAndServerForRunnerRequest(w, r, projectID, "project_file_upload_chunked")
 		if !ok {
 			return

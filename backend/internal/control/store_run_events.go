@@ -11,7 +11,7 @@ import (
 
 func (s *Store) ListRuns(ctx context.Context, taskID string) ([]Run, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, final_message, codex_session_id,
+		SELECT id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, reminder_callback_enabled, final_message, codex_session_id,
 		       assigned_runner_id, exit_code, error_message, cancel_requested_at, runner_started_at,
 		       started_at, ended_at, created_at
 		FROM runs WHERE task_id=$1 ORDER BY created_at ASC`, taskID)
@@ -24,7 +24,7 @@ func (s *Store) ListRuns(ctx context.Context, taskID string) ([]Run, error) {
 
 func (s *Store) GetRun(ctx context.Context, id string) (Run, error) {
 	row := s.db.QueryRow(ctx, `
-		SELECT id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, final_message, codex_session_id,
+		SELECT id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, reminder_callback_enabled, final_message, codex_session_id,
 		       assigned_runner_id, exit_code, error_message, cancel_requested_at, runner_started_at,
 		       started_at, ended_at, created_at
 		FROM runs WHERE id=$1`, id)
@@ -164,7 +164,7 @@ func (s *Store) CompleteRun(ctx context.Context, in CompleteRunInput) (CompleteR
 		UPDATE runs
 		SET status=$2, exit_code=$3, error_message=$4, final_message=$5, codex_session_id=$6, ended_at=$7
 		WHERE id=$1
-		RETURNING id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, final_message, codex_session_id,
+		RETURNING id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, reminder_callback_enabled, final_message, codex_session_id,
 		          assigned_runner_id, exit_code, error_message, cancel_requested_at, runner_started_at,
 		          started_at, ended_at, created_at`,
 		in.RunID, in.Status, in.ExitCode, in.ErrorMessage, in.FinalMessage, sessionID, in.EndedAt))
@@ -387,7 +387,7 @@ func (s *Store) CancelRun(ctx context.Context, runID, reason string) (Run, *RunC
 	defer rollback(ctx, tx)
 
 	run, err := scanRun(tx.QueryRow(ctx, `
-		SELECT id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, final_message, codex_session_id,
+		SELECT id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, reminder_callback_enabled, final_message, codex_session_id,
 		       assigned_runner_id, exit_code, error_message, cancel_requested_at, runner_started_at,
 		       started_at, ended_at, created_at
 		FROM runs WHERE id=$1 FOR UPDATE`, runID))
@@ -461,7 +461,7 @@ func (s *Store) NextQueuedRunsForRunner(ctx context.Context, runnerID string, li
 	defer rollback(ctx, tx)
 
 	rows, err := tx.Query(ctx, `
-		SELECT r.id, r.task_id, p.id, p.workdir, r.mode, r.codex_session_id, r.codex_model, r.codex_reasoning_effort, r.codex_service_tier, r.generated_prompt, srv.runner_id
+		SELECT r.id, r.task_id, p.id, p.workdir, r.mode, r.codex_session_id, r.codex_model, r.codex_reasoning_effort, r.codex_service_tier, r.reminder_callback_enabled, r.generated_prompt, srv.runner_id
 		FROM runs r
 		JOIN tasks t ON t.id=r.task_id
 		JOIN projects p ON p.id=t.project_id
@@ -478,7 +478,7 @@ func (s *Store) NextQueuedRunsForRunner(ctx context.Context, runnerID string, li
 	assignments := []*RunAssignPayload{}
 	for rows.Next() {
 		var rec queuedRunRecord
-		if err := rows.Scan(&rec.RunID, &rec.TaskID, &rec.ProjectID, &rec.Workdir, &rec.Mode, &rec.CodexSessionID, &rec.CodexModel, &rec.ReasoningEffort, &rec.ServiceTier, &rec.Prompt, &rec.RunnerID); err != nil {
+		if err := rows.Scan(&rec.RunID, &rec.TaskID, &rec.ProjectID, &rec.Workdir, &rec.Mode, &rec.CodexSessionID, &rec.CodexModel, &rec.ReasoningEffort, &rec.ServiceTier, &rec.ReminderCallbackEnabled, &rec.Prompt, &rec.RunnerID); err != nil {
 			return nil, err
 		}
 		_, err = tx.Exec(ctx, `UPDATE runs SET assigned_runner_id=$2 WHERE id=$1 AND assigned_runner_id IS NULL`, rec.RunID, runnerID)
@@ -496,13 +496,13 @@ func (s *Store) NextQueuedRunsForRunner(ctx context.Context, runnerID string, li
 func (s *Store) assignmentForRun(ctx context.Context, tx pgx.Tx, runID, codexPath string) (*RunAssignPayload, error) {
 	var rec queuedRunRecord
 	err := tx.QueryRow(ctx, `
-		SELECT r.id, r.task_id, p.id, p.workdir, r.mode, r.codex_session_id, r.codex_model, r.codex_reasoning_effort, r.codex_service_tier, r.generated_prompt, srv.runner_id
+		SELECT r.id, r.task_id, p.id, p.workdir, r.mode, r.codex_session_id, r.codex_model, r.codex_reasoning_effort, r.codex_service_tier, r.reminder_callback_enabled, r.generated_prompt, srv.runner_id
 		FROM runs r
 		JOIN tasks t ON t.id=r.task_id
 		JOIN projects p ON p.id=t.project_id
 		JOIN servers srv ON srv.id=p.server_id
 		WHERE r.id=$1`, runID).
-		Scan(&rec.RunID, &rec.TaskID, &rec.ProjectID, &rec.Workdir, &rec.Mode, &rec.CodexSessionID, &rec.CodexModel, &rec.ReasoningEffort, &rec.ServiceTier, &rec.Prompt, &rec.RunnerID)
+		Scan(&rec.RunID, &rec.TaskID, &rec.ProjectID, &rec.Workdir, &rec.Mode, &rec.CodexSessionID, &rec.CodexModel, &rec.ReasoningEffort, &rec.ServiceTier, &rec.ReminderCallbackEnabled, &rec.Prompt, &rec.RunnerID)
 	if err != nil {
 		return nil, dbErr(err)
 	}
@@ -511,18 +511,19 @@ func (s *Store) assignmentForRun(ctx context.Context, tx pgx.Tx, runID, codexPat
 
 func assignmentFromRecord(rec queuedRunRecord) *RunAssignPayload {
 	return &RunAssignPayload{
-		RunID:           rec.RunID,
-		TaskID:          rec.TaskID,
-		ProjectID:       rec.ProjectID,
-		Workdir:         rec.Workdir,
-		Mode:            rec.Mode,
-		CodexSessionID:  rec.CodexSessionID,
-		CodexModel:      rec.CodexModel,
-		ReasoningEffort: rec.ReasoningEffort,
-		ServiceTier:     rec.ServiceTier,
-		Prompt:          rec.Prompt,
-		Argv:            buildArgv("codex", rec.Workdir, rec.Mode, rec.CodexSessionID, rec.CodexModel, rec.ReasoningEffort, rec.ServiceTier),
-		TargetRunnerID:  rec.RunnerID,
+		RunID:                   rec.RunID,
+		TaskID:                  rec.TaskID,
+		ProjectID:               rec.ProjectID,
+		Workdir:                 rec.Workdir,
+		Mode:                    rec.Mode,
+		CodexSessionID:          rec.CodexSessionID,
+		CodexModel:              rec.CodexModel,
+		ReasoningEffort:         rec.ReasoningEffort,
+		ServiceTier:             rec.ServiceTier,
+		ReminderCallbackEnabled: rec.ReminderCallbackEnabled,
+		Prompt:                  rec.Prompt,
+		Argv:                    buildArgv("codex", rec.Workdir, rec.Mode, rec.CodexSessionID, rec.CodexModel, rec.ReasoningEffort, rec.ServiceTier),
+		TargetRunnerID:          rec.RunnerID,
 	}
 }
 

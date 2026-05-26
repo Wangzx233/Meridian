@@ -134,35 +134,35 @@ func TestBuildArgvCanPreserveCodexSandbox(t *testing.T) {
 }
 
 func TestBuildRunPromptAllowsRawSlashCommands(t *testing.T) {
-	prompt, err := buildRunPrompt(RunModeResume, Task{Title: "Compact"}, " /compact ", nil, true)
+	prompt, err := buildRunPrompt(RunModeResume, Task{Title: "Compact"}, " /compact ", nil, true, false)
 	if err != nil {
 		t.Fatalf("build raw prompt returned error: %v", err)
 	}
 	if prompt != "/compact" {
 		t.Fatalf("raw prompt = %q, want /compact", prompt)
 	}
-	prompt, err = buildRunPrompt(RunModeResume, Task{Title: "Goal"}, " /goal Finish the task ", nil, true)
+	prompt, err = buildRunPrompt(RunModeResume, Task{Title: "Goal"}, " /goal Finish the task ", nil, true, false)
 	if err != nil {
 		t.Fatalf("build goal prompt returned error: %v", err)
 	}
 	if prompt != "/goal Finish the task" {
 		t.Fatalf("raw prompt = %q, want /goal Finish the task", prompt)
 	}
-	prompt, err = buildRunPrompt(RunModeResume, Task{Title: "Goal"}, " /goal clear ", nil, true)
+	prompt, err = buildRunPrompt(RunModeResume, Task{Title: "Goal"}, " /goal clear ", nil, true, false)
 	if err != nil {
 		t.Fatalf("build goal clear prompt returned error: %v", err)
 	}
 	if prompt != "/goal clear" {
 		t.Fatalf("raw prompt = %q, want /goal clear", prompt)
 	}
-	prompt, err = buildRunPrompt(RunModeResume, Task{Title: "Goal"}, " /goal ", nil, true)
+	prompt, err = buildRunPrompt(RunModeResume, Task{Title: "Goal"}, " /goal ", nil, true, false)
 	if err != nil {
 		t.Fatalf("build bare goal prompt returned error: %v", err)
 	}
 	if prompt != "/goal" {
 		t.Fatalf("raw prompt = %q, want /goal", prompt)
 	}
-	if _, err := buildRunPrompt(RunModeResume, Task{Title: "Compact"}, "/fast", nil, true); !errors.Is(err, ErrValidation) {
+	if _, err := buildRunPrompt(RunModeResume, Task{Title: "Compact"}, "/fast", nil, true, false); !errors.Is(err, ErrValidation) {
 		t.Fatalf("invalid raw prompt error = %v, want %v", err, ErrValidation)
 	}
 }
@@ -192,18 +192,28 @@ func TestStatusForRunnerErrors(t *testing.T) {
 func TestBuildPromptAlwaysIncludesTaskDescription(t *testing.T) {
 	task := Task{Title: "Fix workbench UX", Description: "Make output primary."}
 
-	newPrompt := buildPrompt(RunModeNew, task, "Implement", nil)
+	newPrompt := buildPrompt(RunModeNew, task, "Implement", nil, false)
 	if !strings.Contains(newPrompt, "Description:\nMake output primary.") {
 		t.Fatalf("new prompt missing description:\n%s", newPrompt)
 	}
 
-	resumePrompt := buildPrompt(RunModeResume, task, "Continue", nil)
+	resumePrompt := buildPrompt(RunModeResume, task, "Continue", nil, false)
 	if !strings.Contains(resumePrompt, "Description:\nMake output primary.") {
 		t.Fatalf("resume prompt missing description:\n%s", resumePrompt)
 	}
 
-	emptyPrompt := buildPrompt(RunModeNew, Task{Title: "No description"}, "Implement", nil)
+	emptyPrompt := buildPrompt(RunModeNew, Task{Title: "No description"}, "Implement", nil, false)
 	if !strings.Contains(emptyPrompt, "Description:\n(no description provided)") {
 		t.Fatalf("empty description prompt missing fallback:\n%s", emptyPrompt)
+	}
+}
+
+func TestBuildPromptAddsLightReminderInstructionWhenEnabled(t *testing.T) {
+	prompt := buildPrompt(RunModeNew, Task{Title: "Long task"}, "Run checks", nil, true)
+	if count := strings.Count(prompt, "meridian-notify"); count != 1 {
+		t.Fatalf("prompt meridian-notify count = %d, want 1:\n%s", count, prompt)
+	}
+	if strings.Contains(prompt, "MERIDIAN_NOTIFY_TOKEN") || strings.Contains(prompt, "127.0.0.1") {
+		t.Fatalf("prompt leaked callback internals:\n%s", prompt)
 	}
 }

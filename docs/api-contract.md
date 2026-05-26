@@ -185,6 +185,7 @@ Task status values:
   "codex_reasoning_effort": "high",
   "codex_service_tier": "fast",
   "raw_command": false,
+  "reminder_callback_enabled": false,
   "final_message": "Implemented the change and ran tests.",
   "codex_session_id": "codex-session-id",
   "assigned_runner_id": "runner_desktop",
@@ -217,6 +218,8 @@ Codex config. Supported reasoning effort values are `low`, `medium`, `high`,
 and `xhigh`. Supported service tier override values currently include `fast`.
 `raw_command` is reserved for explicit Codex slash-command turns such as
 `/compact`, where the stored prompt is sent to Codex without workbench wrapping.
+`reminder_callback_enabled` records whether this run was allowed to expose the
+runner-local `meridian-notify` helper to Codex.
 
 ### Context Item
 
@@ -859,8 +862,10 @@ Notification response:
 Rules:
 
 - `pending=true` is the default and returns unacknowledged notifications.
-- Notification type values are `task_done` and `run_finished`. `run_finished`
-  notifications include `run_id` and terminal `run_status`.
+- Notification type values are `task_done`, `run_finished`, and
+  `codex_reminder`. `run_finished` notifications include `run_id` and terminal
+  `run_status`; `codex_reminder` notifications include `run_id` and use the
+  message supplied through the runner-local callback.
 - `server_name` is the server alias when present, otherwise the registered
   server name.
 - Pending notification queries exclude `task_done`; that type is retained only
@@ -922,6 +927,7 @@ Create run request:
   "codex_reasoning_effort": "high",
   "codex_service_tier": "fast",
   "raw_command": false,
+  "reminder_callback_enabled": true,
   "context_item_ids": ["ctx_123", "ctx_456"]
 }
 ```
@@ -958,6 +964,8 @@ Create-run rules:
 - `new` starts a new Codex session for the task.
 - Creating a run stores selected context snapshots immediately.
 - Creating a run builds and stores `generated_prompt` immediately.
+- `reminder_callback_enabled=true` is accepted only when the target runner is
+  connected and reports `codex_reminders`; raw command runs ignore it.
 - Creating a run inserts a `queued` run and moves the task to `running` in the
   same database transaction.
 - The database must enforce at most one active run per task, where active means
@@ -1245,7 +1253,8 @@ Direction: runner to control plane.
       "active_runs": true,
       "self_update": true,
       "self_update_exec": true,
-      "shutdown": true
+      "shutdown": true,
+      "codex_reminders": true
     }
   }
 }
@@ -1286,6 +1295,7 @@ Direction: control plane to runner.
     "codex_model": "gpt-5.5",
     "codex_reasoning_effort": "high",
     "codex_service_tier": "fast",
+    "reminder_callback_enabled": true,
     "prompt": "Continue the current task...",
     "argv": [
       "codex",
@@ -1320,6 +1330,9 @@ When run options are set, they appear before `exec`, for example
 "model_reasoning_effort=\"high\"", "exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "--json", "-"]`.
 
 The runner writes `prompt` to Codex stdin.
+When `reminder_callback_enabled` is true, the runner adds `meridian-notify` to
+the Codex process PATH and injects a per-run local callback URL/token through
+environment variables. The callback listener binds only to `127.0.0.1`.
 
 ### `run.started`
 
@@ -1434,6 +1447,30 @@ Allowed completed statuses:
 - `succeeded`
 - `failed`
 - `canceled`
+
+### `run.reminder`
+
+Direction: runner to control plane.
+
+```json
+{
+  "type": "run.reminder",
+  "message_id": "msg_250",
+  "sent_at": "2026-05-11T08:30:00Z",
+  "payload": {
+    "run_id": "run_123",
+    "title": "Build finished",
+    "message": "Review the build output.",
+    "sent_at": "2026-05-11T08:30:00Z"
+  }
+}
+```
+
+Rules:
+
+- Runners send this only after a run-local `meridian-notify` helper call.
+- The control plane creates a pending `codex_reminder` notification.
+- The runner callback URL and token are never part of `generated_prompt`.
 
 ### `runner.update`
 

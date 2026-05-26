@@ -534,6 +534,7 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
       codex_reasoning_effort: CodexReasoningEffort;
       codex_service_tier: CodexServiceTier;
       raw_command?: boolean;
+      reminder_callback_enabled?: boolean;
       context_item_ids: string[];
     }) =>
       api.createRun(selectedTaskId!, body, crypto.randomUUID()),
@@ -555,6 +556,7 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
       codex_reasoning_effort: CodexReasoningEffort;
       codex_service_tier: CodexServiceTier;
       raw_command?: boolean;
+      reminder_callback_enabled?: boolean;
       context_item_ids: string[];
     }) => api.interruptRun(selectedTaskId!, body, crypto.randomUUID()),
     onSuccess: (response) => {

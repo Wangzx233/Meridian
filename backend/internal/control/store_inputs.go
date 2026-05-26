@@ -6,15 +6,16 @@ import (
 )
 
 type CreateRunInput struct {
-	TaskID          string
-	Message         string
-	Mode            string
-	CodexModel      string
-	ReasoningEffort string
-	ServiceTier     string
-	RawCommand      bool
-	ContextItemIDs  []string
-	IdempotencyKey  string
+	TaskID                  string
+	Message                 string
+	Mode                    string
+	CodexModel              string
+	ReasoningEffort         string
+	ServiceTier             string
+	RawCommand              bool
+	ReminderCallbackEnabled bool
+	ContextItemIDs          []string
+	IdempotencyKey          string
 }
 
 type CreateRunResult struct {
@@ -136,15 +137,16 @@ type RunnerEventInput struct {
 }
 
 type queuedRunRecord struct {
-	RunID           string
-	TaskID          string
-	ProjectID       string
-	Workdir         string
-	Mode            string
-	CodexSessionID  *string
-	CodexModel      *string
-	ReasoningEffort *string
-	ServiceTier     *string
-	Prompt          string
-	RunnerID        string
+	RunID                   string
+	TaskID                  string
+	ProjectID               string
+	Workdir                 string
+	Mode                    string
+	CodexSessionID          *string
+	CodexModel              *string
+	ReasoningEffort         *string
+	ServiceTier             *string
+	ReminderCallbackEnabled bool
+	Prompt                  string
+	RunnerID                string
 }

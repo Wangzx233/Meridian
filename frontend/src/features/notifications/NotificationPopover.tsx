@@ -136,6 +136,9 @@ export function NotificationPopover(props: {
 
 
 export function notificationMessage(notification: WorkbenchNotification) {
+  if (notification.type === "codex_reminder" && notification.message) {
+    return notification.message;
+  }
   const status = notification.run_status ? ` / ${notification.run_status}` : "";
   return `${notification.server_name} / ${notification.project_name}${status}`;
 }

@@ -1,6 +1,7 @@
 package control
 
 import (
+	"context"
 	"errors"
 	"net/http"
 )
@@ -59,27 +60,29 @@ func (a *API) handleTaskRoutes(w http.ResponseWriter, r *http.Request) {
 			a.respondList(w, items, err)
 		case http.MethodPost:
 			var in struct {
-				Message         string   `json:"message"`
-				Mode            string   `json:"mode"`
-				CodexModel      string   `json:"codex_model"`
-				ReasoningEffort string   `json:"codex_reasoning_effort"`
-				ServiceTier     string   `json:"codex_service_tier"`
-				RawCommand      bool     `json:"raw_command"`
-				ContextItemIDs  []string `json:"context_item_ids"`
+				Message                 string   `json:"message"`
+				Mode                    string   `json:"mode"`
+				CodexModel              string   `json:"codex_model"`
+				ReasoningEffort         string   `json:"codex_reasoning_effort"`
+				ServiceTier             string   `json:"codex_service_tier"`
+				RawCommand              bool     `json:"raw_command"`
+				ReminderCallbackEnabled bool     `json:"reminder_callback_enabled"`
+				ContextItemIDs          []string `json:"context_item_ids"`
 			}
 			if !decodeJSON(w, r, &in) {
 				return
 			}
 			result, err := a.store.CreateRun(r.Context(), CreateRunInput{
-				TaskID:          taskID,
-				Message:         in.Message,
-				Mode:            in.Mode,
-				CodexModel:      in.CodexModel,
-				ReasoningEffort: in.ReasoningEffort,
-				ServiceTier:     in.ServiceTier,
-				RawCommand:      in.RawCommand,
-				ContextItemIDs:  in.ContextItemIDs,
-				IdempotencyKey:  r.Header.Get("Idempotency-Key"),
+				TaskID:                  taskID,
+				Message:                 in.Message,
+				Mode:                    in.Mode,
+				CodexModel:              in.CodexModel,
+				ReasoningEffort:         in.ReasoningEffort,
+				ServiceTier:             in.ServiceTier,
+				RawCommand:              in.RawCommand,
+				ReminderCallbackEnabled: in.ReminderCallbackEnabled && a.taskRunnerSupportsCapability(r.Context(), taskID, "codex_reminders"),
+				ContextItemIDs:          in.ContextItemIDs,
+				IdempotencyKey:          r.Header.Get("Idempotency-Key"),
 			})
 			if err != nil {
 				a.respond(w, http.StatusCreated, nil, err)
@@ -103,27 +106,29 @@ func (a *API) handleTaskRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		taskID := parts[0]
 		var in struct {
-			Message         string   `json:"message"`
-			Mode            string   `json:"mode"`
-			CodexModel      string   `json:"codex_model"`
-			ReasoningEffort string   `json:"codex_reasoning_effort"`
-			ServiceTier     string   `json:"codex_service_tier"`
-			RawCommand      bool     `json:"raw_command"`
-			ContextItemIDs  []string `json:"context_item_ids"`
+			Message                 string   `json:"message"`
+			Mode                    string   `json:"mode"`
+			CodexModel              string   `json:"codex_model"`
+			ReasoningEffort         string   `json:"codex_reasoning_effort"`
+			ServiceTier             string   `json:"codex_service_tier"`
+			RawCommand              bool     `json:"raw_command"`
+			ReminderCallbackEnabled bool     `json:"reminder_callback_enabled"`
+			ContextItemIDs          []string `json:"context_item_ids"`
 		}
 		if !decodeJSON(w, r, &in) {
 			return
 		}
 		result, err := a.store.InterruptRun(r.Context(), CreateRunInput{
-			TaskID:          taskID,
-			Message:         in.Message,
-			Mode:            in.Mode,
-			CodexModel:      in.CodexModel,
-			ReasoningEffort: in.ReasoningEffort,
-			ServiceTier:     in.ServiceTier,
-			RawCommand:      in.RawCommand,
-			ContextItemIDs:  in.ContextItemIDs,
-			IdempotencyKey:  r.Header.Get("Idempotency-Key"),
+			TaskID:                  taskID,
+			Message:                 in.Message,
+			Mode:                    in.Mode,
+			CodexModel:              in.CodexModel,
+			ReasoningEffort:         in.ReasoningEffort,
+			ServiceTier:             in.ServiceTier,
+			RawCommand:              in.RawCommand,
+			ReminderCallbackEnabled: in.ReminderCallbackEnabled && a.taskRunnerSupportsCapability(r.Context(), taskID, "codex_reminders"),
+			ContextItemIDs:          in.ContextItemIDs,
+			IdempotencyKey:          r.Header.Get("Idempotency-Key"),
 		}, "Interrupted by a newer user instruction.")
 		if err != nil {
 			a.respond(w, http.StatusCreated, nil, err)
@@ -144,4 +149,20 @@ func (a *API) handleTaskRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, http.StatusNotFound, "not_found", "Resource not found.", nil)
+}
+
+func (a *API) taskRunnerSupportsCapability(ctx context.Context, taskID, capability string) bool {
+	task, err := a.store.GetTask(ctx, taskID)
+	if err != nil {
+		return false
+	}
+	project, err := a.store.GetProject(ctx, task.ProjectID)
+	if err != nil {
+		return false
+	}
+	server, err := a.store.GetServer(ctx, project.ServerID)
+	if err != nil {
+		return false
+	}
+	return a.runners.Supports(server.RunnerID, capability)
 }

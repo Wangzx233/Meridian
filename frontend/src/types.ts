@@ -227,6 +227,7 @@ export type Run = {
   codex_reasoning_effort: Exclude<CodexReasoningEffort, ""> | null;
   codex_service_tier: Exclude<CodexServiceTier, ""> | null;
   raw_command: boolean;
+  reminder_callback_enabled: boolean;
   final_message: string | null;
   codex_session_id: string | null;
   assigned_runner_id: string | null;
@@ -282,7 +283,7 @@ export type EmailNotificationConfig = {
   updated_at: Timestamp;
 };
 
-export type WorkbenchNotificationType = "run_finished" | "task_done";
+export type WorkbenchNotificationType = "run_finished" | "task_done" | "codex_reminder";
 
 export type WorkbenchNotification = {
   id: string;
@@ -404,6 +405,7 @@ export type CreateRunRequest = {
   codex_reasoning_effort: CodexReasoningEffort;
   codex_service_tier: CodexServiceTier;
   raw_command?: boolean;
+  reminder_callback_enabled?: boolean;
   context_item_ids: string[];
 };
 

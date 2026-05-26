@@ -51,6 +51,7 @@ type Agent struct {
 	active        map[string]context.CancelFunc
 	shutdown      ShutdownFunc
 	stopping      bool
+	reminders     *reminderCallbackServer
 	uploadLocksMu sync.Mutex
 	uploadLocks   map[string]*uploadLockState
 }
@@ -89,7 +90,9 @@ func New(cfg Config, logger *slog.Logger) *Agent {
 	if cfg.CompactTimeout == 0 {
 		cfg.CompactTimeout = 5 * time.Minute
 	}
-	return &Agent{cfg: cfg, logger: logger, active: map[string]context.CancelFunc{}, shutdown: defaultShutdown, uploadLocks: map[string]*uploadLockState{}}
+	a := &Agent{cfg: cfg, logger: logger, active: map[string]context.CancelFunc{}, shutdown: defaultShutdown, uploadLocks: map[string]*uploadLockState{}}
+	a.reminders = newReminderCallbackServer(logger, a.send)
+	return a
 }
 
 func (a *Agent) SetShutdownFunc(fn ShutdownFunc) {
@@ -106,6 +109,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		a.logger.Info("runner is disabled; reinstall to reconnect")
 		return nil
 	}
+	defer a.shutdownReminders()
 	retryDelay := time.Second
 	for {
 		connected, err := a.runOnce(ctx)
@@ -125,6 +129,17 @@ func (a *Agent) Run(ctx context.Context) error {
 				retryDelay = 30 * time.Second
 			}
 		}
+	}
+}
+
+func (a *Agent) shutdownReminders() {
+	if a.reminders == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := a.reminders.shutdown(ctx); err != nil {
+		a.logger.Warn("reminder callback shutdown failed", "error", err)
 	}
 }
 
@@ -646,7 +661,7 @@ func (a *Agent) execute(agentCtx, runCtx context.Context, assign Assignment) {
 		defer timeoutCancel()
 	}
 	runner := CodexRunner{
-		Env: a.cfg.Env,
+		Env: a.runEnv(assign),
 		OnStarted: func(pid int) {
 			_ = a.send("run.started", map[string]any{
 				"run_id":     assign.RunID,
@@ -683,6 +698,33 @@ func (a *Agent) execute(agentCtx, runCtx context.Context, assign Assignment) {
 		result.ErrorMessage = &msg
 	}
 	a.sendRunCompleted(agentCtx, assign.RunID, result)
+}
+
+func (a *Agent) runEnv(assign Assignment) []string {
+	env := append([]string(nil), a.cfg.Env...)
+	if !assign.ReminderCallbackEnabled || a.reminders == nil {
+		return env
+	}
+	reg, err := a.reminders.register(assign.RunID)
+	if err != nil {
+		a.logger.Warn("codex reminder callback unavailable", "run_id", assign.RunID, "error", err)
+		return env
+	}
+	helperDir, err := ensureNotifyHelperDir()
+	if err != nil {
+		a.logger.Warn("codex reminder helper unavailable", "run_id", assign.RunID, "error", err)
+		return env
+	}
+	path := helperDir
+	if existing := envValue(mergedEnv(env), "PATH"); existing != "" {
+		path += string(os.PathListSeparator) + existing
+	}
+	env = append(env,
+		"MERIDIAN_NOTIFY_URL="+reg.URL,
+		"MERIDIAN_NOTIFY_TOKEN="+reg.Token,
+		"PATH="+path,
+	)
+	return env
 }
 
 func (a *Agent) handleProjectFileUploadChunk(messageID string, raw json.RawMessage) {
@@ -825,6 +867,7 @@ func (a *Agent) register() error {
 			"self_update":                 true,
 			"self_update_exec":            true,
 			"shutdown":                    true,
+			"codex_reminders":             true,
 		},
 	})
 }

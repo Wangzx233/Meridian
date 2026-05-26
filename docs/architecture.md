@@ -83,6 +83,8 @@ Responsibilities:
 - Stream Codex JSONL/stdout/stderr events back.
 - Support cancellation.
 - Report final status.
+- Expose a run-scoped local notification helper only when the control plane
+  explicitly enables Codex reminders for that run.
 - Self-update from deployed runner artifacts when the registered capability is
   available.
 
@@ -391,6 +393,11 @@ Requirements:
   sandbox path limits. Operators can set
   `CODEX_BYPASS_APPROVALS_AND_SANDBOX=false` to preserve Codex's sandbox and
   approval behavior.
+- When a run has Codex reminders enabled, prepend a runner-managed
+  `meridian-notify` helper to that Codex process `PATH` and pass a
+  runner-local callback URL/token through environment variables. The callback
+  must bind to `127.0.0.1`, and the callback URL/token must not be included in
+  prompts or persisted as context.
 
 Commands:
 

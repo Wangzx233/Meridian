@@ -62,6 +62,7 @@ import { composerDefaultHeight, composerMaxHeight, composerMinHeight, sidePanelD
 import { useI18n } from "../../shared/i18n";
 import { serverDisplayName } from "../../shared/serverDisplay";
 import { useStoredPanelSize, useStoredString } from "../../shared/storage";
+import { runnerCapabilityBlockedReason } from "../../shared/runnerCapabilities";
 import { EmptyState, Fact, LoadingState, ResizeHandle, StatusBadge } from "../../shared/ui";
 import { AgentsFilePanel } from "../agents/AgentsFilePanel";
 import { ContextPanel } from "../context/ContextPanel";
@@ -117,6 +118,7 @@ export function TaskSessionPanel(props: {
     codex_reasoning_effort: CodexReasoningEffort;
     codex_service_tier: CodexServiceTier;
     raw_command?: boolean;
+    reminder_callback_enabled?: boolean;
     context_item_ids: string[];
   }) => void;
   creatingRun: boolean;
@@ -127,6 +129,7 @@ export function TaskSessionPanel(props: {
     codex_reasoning_effort: CodexReasoningEffort;
     codex_service_tier: CodexServiceTier;
     raw_command?: boolean;
+    reminder_callback_enabled?: boolean;
     context_item_ids: string[];
   }) => void;
   interruptingRun: boolean;
@@ -151,6 +154,7 @@ export function TaskSessionPanel(props: {
     (value: CodexServiceTier) => void,
   ];
   const [goalMode, setGoalMode] = useState(false);
+  const [reminderCallbacksEnabled, setReminderCallbacksEnabled] = useStoredString("ctw.reminderCallbacksEnabled", "");
   const [taskMemory, setTaskMemory] = useState<TaskMemoryDraft>(emptyTaskMemoryDraft());
   const [memoryDetailsOpen, setMemoryDetailsOpen] = useState(false);
   const [memoryDraftRunId, setMemoryDraftRunId] = useState<string | null>(null);
@@ -267,6 +271,8 @@ export function TaskSessionPanel(props: {
   const hasObservedSession = Boolean(props.task?.codex_session_id || props.runs.some((run) => run.codex_session_id));
   const canCompact = canSend && hasObservedSession;
   const canChangeGoal = canSend && hasObservedSession;
+  const canUseCodexReminders = props.server?.runner_connected === true && props.server.runner_capabilities?.codex_reminders === true;
+  const reminderCallbacksOn = canUseCodexReminders && reminderCallbacksEnabled === "true";
   const activeWorkspaceTab = activeWorkbenchTab;
   const mountedWorkspaceTabs = visitedWorkbenchTabs;
 
@@ -335,6 +341,7 @@ export function TaskSessionPanel(props: {
       codex_model: codexModel.trim(),
       codex_reasoning_effort: reasoningEffort,
       codex_service_tier: serviceTier,
+      reminder_callback_enabled: reminderCallbacksOn,
       context_item_ids: selectedContextIds,
     });
     clearMessageDraft();
@@ -386,6 +393,7 @@ export function TaskSessionPanel(props: {
       codex_model: codexModel.trim(),
       codex_reasoning_effort: reasoningEffort,
       codex_service_tier: serviceTier,
+      reminder_callback_enabled: reminderCallbacksOn,
       context_item_ids: selectedContextIds,
     });
     clearMessageDraft();
@@ -792,6 +800,14 @@ export function TaskSessionPanel(props: {
               onServiceTierChange={setServiceTier}
               goalMode={goalMode}
               onGoalModeChange={submitGoalToggle}
+              reminderCallbacksEnabled={reminderCallbacksOn}
+              onReminderCallbacksChange={() => setReminderCallbacksEnabled(reminderCallbacksOn ? "" : "true")}
+              canUseReminderCallbacks={canUseCodexReminders}
+              reminderCallbacksBlockedReason={
+                canUseCodexReminders
+                  ? undefined
+                  : runnerCapabilityBlockedReason(props.server, "codex_reminders", "Codex reminders")
+              }
               contextCount={selectedContextIds.length}
               disabled={!canSend || props.creatingRun}
               canInterrupt={canInterrupt}

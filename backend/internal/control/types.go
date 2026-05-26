@@ -21,8 +21,9 @@ const (
 	RunStatusFailed    = "failed"
 	RunStatusCanceled  = "canceled"
 
-	NotificationTypeTaskDone    = "task_done"
-	NotificationTypeRunFinished = "run_finished"
+	NotificationTypeTaskDone      = "task_done"
+	NotificationTypeRunFinished   = "run_finished"
+	NotificationTypeCodexReminder = "codex_reminder"
 
 	EventRunState    = "run.state"
 	EventCodexEvent  = "codex.event"
@@ -259,26 +260,27 @@ type Task struct {
 }
 
 type Run struct {
-	ID                string     `json:"id"`
-	TaskID            string     `json:"task_id"`
-	Mode              string     `json:"mode"`
-	Status            string     `json:"status"`
-	UserMessage       string     `json:"user_message"`
-	GeneratedPrompt   string     `json:"generated_prompt"`
-	CodexModel        *string    `json:"codex_model"`
-	ReasoningEffort   *string    `json:"codex_reasoning_effort"`
-	ServiceTier       *string    `json:"codex_service_tier"`
-	RawCommand        bool       `json:"raw_command"`
-	FinalMessage      *string    `json:"final_message"`
-	CodexSessionID    *string    `json:"codex_session_id"`
-	AssignedRunnerID  *string    `json:"assigned_runner_id"`
-	ExitCode          *int       `json:"exit_code"`
-	ErrorMessage      *string    `json:"error_message"`
-	CancelRequestedAt *time.Time `json:"cancel_requested_at"`
-	RunnerStartedAt   *time.Time `json:"runner_started_at"`
-	StartedAt         time.Time  `json:"started_at"`
-	EndedAt           *time.Time `json:"ended_at"`
-	CreatedAt         time.Time  `json:"created_at"`
+	ID                      string     `json:"id"`
+	TaskID                  string     `json:"task_id"`
+	Mode                    string     `json:"mode"`
+	Status                  string     `json:"status"`
+	UserMessage             string     `json:"user_message"`
+	GeneratedPrompt         string     `json:"generated_prompt"`
+	CodexModel              *string    `json:"codex_model"`
+	ReasoningEffort         *string    `json:"codex_reasoning_effort"`
+	ServiceTier             *string    `json:"codex_service_tier"`
+	RawCommand              bool       `json:"raw_command"`
+	ReminderCallbackEnabled bool       `json:"reminder_callback_enabled"`
+	FinalMessage            *string    `json:"final_message"`
+	CodexSessionID          *string    `json:"codex_session_id"`
+	AssignedRunnerID        *string    `json:"assigned_runner_id"`
+	ExitCode                *int       `json:"exit_code"`
+	ErrorMessage            *string    `json:"error_message"`
+	CancelRequestedAt       *time.Time `json:"cancel_requested_at"`
+	RunnerStartedAt         *time.Time `json:"runner_started_at"`
+	StartedAt               time.Time  `json:"started_at"`
+	EndedAt                 *time.Time `json:"ended_at"`
+	CreatedAt               time.Time  `json:"created_at"`
 }
 
 type ContextItem struct {
@@ -384,20 +386,21 @@ type RunnerHeartbeatPayload struct {
 }
 
 type RunAssignPayload struct {
-	RunID           string   `json:"run_id"`
-	TaskID          string   `json:"task_id"`
-	ProjectID       string   `json:"project_id"`
-	Workdir         string   `json:"workdir"`
-	Mode            string   `json:"mode"`
-	CodexSessionID  *string  `json:"codex_session_id"`
-	CodexModel      *string  `json:"codex_model,omitempty"`
-	ReasoningEffort *string  `json:"codex_reasoning_effort,omitempty"`
-	ServiceTier     *string  `json:"codex_service_tier,omitempty"`
-	Prompt          string   `json:"prompt"`
-	Argv            []string `json:"argv"`
-	AssignedRunner  string   `json:"-"`
-	TargetRunnerID  string   `json:"-"`
-	ProjectServerID string   `json:"-"`
+	RunID                   string   `json:"run_id"`
+	TaskID                  string   `json:"task_id"`
+	ProjectID               string   `json:"project_id"`
+	Workdir                 string   `json:"workdir"`
+	Mode                    string   `json:"mode"`
+	CodexSessionID          *string  `json:"codex_session_id"`
+	CodexModel              *string  `json:"codex_model,omitempty"`
+	ReasoningEffort         *string  `json:"codex_reasoning_effort,omitempty"`
+	ServiceTier             *string  `json:"codex_service_tier,omitempty"`
+	ReminderCallbackEnabled bool     `json:"reminder_callback_enabled,omitempty"`
+	Prompt                  string   `json:"prompt"`
+	Argv                    []string `json:"argv"`
+	AssignedRunner          string   `json:"-"`
+	TargetRunnerID          string   `json:"-"`
+	ProjectServerID         string   `json:"-"`
 }
 
 type RunStartedPayload struct {
@@ -423,6 +426,13 @@ type RunCompletedPayload struct {
 	FinalMessage   *string    `json:"final_message"`
 	CodexSessionID *string    `json:"codex_session_id"`
 	EndedAt        *time.Time `json:"ended_at"`
+}
+
+type RunReminderPayload struct {
+	RunID   string     `json:"run_id"`
+	Title   string     `json:"title"`
+	Message string     `json:"message"`
+	SentAt  *time.Time `json:"sent_at"`
 }
 
 type RunCancelPayload struct {

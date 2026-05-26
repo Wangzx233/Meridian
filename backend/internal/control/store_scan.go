@@ -72,7 +72,7 @@ func scanTasks(rows pgx.Rows) ([]Task, error) {
 
 func scanRun(row pgx.Row) (Run, error) {
 	var r Run
-	err := row.Scan(&r.ID, &r.TaskID, &r.Mode, &r.Status, &r.UserMessage, &r.GeneratedPrompt, &r.CodexModel, &r.ReasoningEffort, &r.ServiceTier, &r.RawCommand, &r.FinalMessage, &r.CodexSessionID,
+	err := row.Scan(&r.ID, &r.TaskID, &r.Mode, &r.Status, &r.UserMessage, &r.GeneratedPrompt, &r.CodexModel, &r.ReasoningEffort, &r.ServiceTier, &r.RawCommand, &r.ReminderCallbackEnabled, &r.FinalMessage, &r.CodexSessionID,
 		&r.AssignedRunnerID, &r.ExitCode, &r.ErrorMessage, &r.CancelRequestedAt, &r.RunnerStartedAt, &r.StartedAt, &r.EndedAt, &r.CreatedAt)
 	return r, dbErr(err)
 }

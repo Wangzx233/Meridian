@@ -11,7 +11,7 @@ type contextSnapshot struct {
 	Content string
 }
 
-func buildPrompt(mode string, task Task, message string, items []contextSnapshot) string {
+func buildPrompt(mode string, task Task, message string, items []contextSnapshot, reminderCallbackEnabled bool) string {
 	var b strings.Builder
 	b.WriteString("Current task:\n")
 	b.WriteString(task.Title)
@@ -65,12 +65,15 @@ func buildPrompt(mode string, task Task, message string, items []contextSnapshot
 		b.WriteString("- Current repository code is authoritative if it conflicts with context.\n")
 		b.WriteString("- Complete this turn and explain changes, verification, and next steps.\n")
 	}
+	if reminderCallbackEnabled {
+		b.WriteString("- Optional: for a long background wait, append `meridian-notify --title \"...\" --message \"...\"` so the workbench reminds the user when attention is needed; normal run completion already notifies.\n")
+	}
 	return b.String()
 }
 
-func buildRunPrompt(mode string, task Task, message string, items []contextSnapshot, rawCommand bool) (string, error) {
+func buildRunPrompt(mode string, task Task, message string, items []contextSnapshot, rawCommand bool, reminderCallbackEnabled bool) (string, error) {
 	if !rawCommand {
-		return buildPrompt(mode, task, message, items), nil
+		return buildPrompt(mode, task, message, items, reminderCallbackEnabled), nil
 	}
 	command := strings.TrimSpace(message)
 	if !isAllowedRawCodexCommand(command) || mode != RunModeResume || len(items) > 0 {

@@ -309,6 +309,96 @@ func TestAgentNormalizeAssignmentCanPreserveCodexSandbox(t *testing.T) {
 	}
 }
 
+func TestAgentRunEnvAddsReminderHelperForEnabledAssignment(t *testing.T) {
+	agent := New(Config{Env: []string{"PATH=base-path"}}, nil)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = agent.reminders.shutdown(ctx)
+	})
+	env := agent.runEnv(Assignment{RunID: "run_reminder", ReminderCallbackEnabled: true})
+	joined := strings.Join(env, "\n")
+	for _, want := range []string{"MERIDIAN_NOTIFY_URL=http://127.0.0.1:", "MERIDIAN_NOTIFY_TOKEN=", "PATH="} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("run env missing %q:\n%s", want, joined)
+		}
+	}
+	pathValue := envValue(mergedEnv(env), "PATH")
+	if !strings.Contains(pathValue, "meridian-runner-tools-") || !strings.Contains(pathValue, "base-path") {
+		t.Fatalf("PATH = %q, want helper dir plus existing PATH", pathValue)
+	}
+}
+
+func TestReminderCallbackSendsRunReminder(t *testing.T) {
+	type sentMessage struct {
+		typ     string
+		payload map[string]any
+	}
+	sent := make(chan sentMessage, 1)
+	server := newReminderCallbackServer(nil, func(typ string, payload any) error {
+		m, ok := payload.(map[string]any)
+		if !ok {
+			t.Fatalf("payload type = %T, want map", payload)
+		}
+		sent <- sentMessage{typ: typ, payload: m}
+		return nil
+	})
+	reg, err := server.register("run_123")
+	if err != nil {
+		t.Fatalf("register reminder callback: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = server.shutdown(ctx)
+	})
+	body := strings.NewReader(`{"title":"Build finished","message":"Review the output"}`)
+	req, err := http.NewRequest(http.MethodPost, reg.URL, body)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+reg.Token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("post reminder: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusAccepted)
+	}
+	select {
+	case msg := <-sent:
+		if msg.typ != "run.reminder" || msg.payload["run_id"] != "run_123" || msg.payload["title"] != "Build finished" {
+			t.Fatalf("sent = %#v", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("callback did not send reminder")
+	}
+}
+
+func TestParseNotifyHelperArgs(t *testing.T) {
+	title, message, err := parseNotifyHelperArgs([]string{"--title", "Build", "--message", "Review output"})
+	if err != nil {
+		t.Fatalf("parse title/message: %v", err)
+	}
+	if title != "Build" || message != "Review output" {
+		t.Fatalf("title/message = %q/%q", title, message)
+	}
+
+	title, message, err = parseNotifyHelperArgs([]string{"Long", "wait", "finished"})
+	if err != nil {
+		t.Fatalf("parse positional message: %v", err)
+	}
+	if title != "" || message != "Long wait finished" {
+		t.Fatalf("positional title/message = %q/%q", title, message)
+	}
+
+	if _, _, err = parseNotifyHelperArgs([]string{"--title"}); err == nil {
+		t.Fatal("missing title value should fail")
+	}
+}
+
 func TestListDirectoriesReturnsProjectMarkers(t *testing.T) {
 	root := t.TempDir()
 	projectDir := root + string(os.PathSeparator) + "project"

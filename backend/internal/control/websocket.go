@@ -190,6 +190,17 @@ func (a *API) handleRunnerWS(w http.ResponseWriter, r *http.Request) {
 				a.logger.Warn("create run finished web notification failed", "run_id", payload.RunID, "error", notifyErr)
 			}
 			a.hub.Publish(result.Event)
+		case "run.reminder":
+			var payload RunReminderPayload
+			if !decodeEnvelopePayload(env.Payload, &payload, a, "run.reminder") {
+				continue
+			}
+			notification, err := a.store.CreateCodexReminderNotification(r.Context(), payload.RunID, payload.Title, payload.Message)
+			if err != nil {
+				a.logger.Warn("create codex reminder notification failed", "run_id", payload.RunID, "error", err)
+				continue
+			}
+			a.logger.Info("codex reminder created", "runner_id", runnerID, "run_id", payload.RunID, "notification_id", notification.ID)
 		case "run.cancel_ack":
 			var payload RunCancelAckPayload
 			if !decodeEnvelopePayload(env.Payload, &payload, a, "run.cancel_ack") {

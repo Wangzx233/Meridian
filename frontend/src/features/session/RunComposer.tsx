@@ -56,6 +56,10 @@ export function RunComposer(props: {
   onServiceTierChange: (value: CodexServiceTier) => void;
   goalMode: boolean;
   onGoalModeChange: () => void;
+  reminderCallbacksEnabled: boolean;
+  onReminderCallbacksChange: () => void;
+  canUseReminderCallbacks: boolean;
+  reminderCallbacksBlockedReason?: string;
   contextCount: number;
   disabled: boolean;
   canInterrupt: boolean;
@@ -147,6 +151,16 @@ export function RunComposer(props: {
           >
             <ClipboardList size={14} />
             {t("composer.goal")}
+          </button>
+          <button
+            className={`optionToggle ${props.reminderCallbacksEnabled ? "isSelected" : ""}`}
+            type="button"
+            onClick={props.onReminderCallbacksChange}
+            disabled={!props.canUseReminderCallbacks || props.submitting || props.interrupting}
+            title={props.canUseReminderCallbacks ? t("composer.remindersTitle") : props.reminderCallbacksBlockedReason}
+          >
+            <Bell size={14} />
+            {t("composer.reminders")}
           </button>
           <button
             className="ghostButton compact"

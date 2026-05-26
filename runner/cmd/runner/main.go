@@ -15,6 +15,9 @@ import (
 var RunnerVersion = "0.5.0"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "notify-helper" {
+		os.Exit(agent.RunNotifyHelper(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	hostname, _ := os.Hostname()
 	cfg := agent.Config{
 		ControlURL:        env("CONTROL_URL", "http://localhost:8080"),

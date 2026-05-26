@@ -542,6 +542,50 @@ func TestRunFinishedNotificationIntegration(t *testing.T) {
 	}
 }
 
+func TestCodexReminderNotificationIntegration(t *testing.T) {
+	dsn := testDatabaseURL(t)
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect database: %v", err)
+	}
+	defer pool.Close()
+	resetIntegrationDB(t, pool)
+
+	store := NewStore(pool)
+	server, err := store.CreateServer(ctx, CreateServerInput{Name: "desktop", RunnerID: "runner_desktop"})
+	if err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+	project, err := store.CreateProject(ctx, CreateProjectInput{ServerID: server.ID, Name: "workbench", Workdir: "D:\\go\\workplace"})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, CreateTaskInput{Title: "Long checks"})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	created, err := store.CreateRun(ctx, CreateRunInput{TaskID: task.ID, Message: "run slow checks", Mode: "new", ReminderCallbackEnabled: true})
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	notification, err := store.CreateCodexReminderNotification(ctx, created.Run.ID, "Checks need review", "Open the output and inspect failures.")
+	if err != nil {
+		t.Fatalf("create codex reminder notification: %v", err)
+	}
+	if notification.Type != NotificationTypeCodexReminder || notification.RunID == nil || *notification.RunID != created.Run.ID || notification.Message != "Open the output and inspect failures." {
+		t.Fatalf("notification = %#v, want codex reminder details", notification)
+	}
+	items, err := store.ListWorkbenchNotifications(ctx, true)
+	if err != nil {
+		t.Fatalf("list pending notifications: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != notification.ID {
+		t.Fatalf("pending notifications = %#v, want reminder notification", items)
+	}
+}
+
 func TestDatabaseEnforcesOneActiveRunPerTaskIntegration(t *testing.T) {
 	dsn := os.Getenv("CTW_TEST_DATABASE_URL")
 	if dsn == "" {

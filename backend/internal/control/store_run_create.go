@@ -93,7 +93,8 @@ func (s *Store) CreateRun(ctx context.Context, in CreateRunInput) (CreateRunResu
 	if err != nil {
 		return CreateRunResult{}, err
 	}
-	prompt, err := buildRunPrompt(mode, task, in.Message, snapshots, in.RawCommand)
+	reminderCallbackEnabled := in.ReminderCallbackEnabled && !in.RawCommand
+	prompt, err := buildRunPrompt(mode, task, in.Message, snapshots, in.RawCommand, reminderCallbackEnabled)
 	if err != nil {
 		return CreateRunResult{}, err
 	}
@@ -103,12 +104,12 @@ func (s *Store) CreateRun(ctx context.Context, in CreateRunInput) (CreateRunResu
 	}
 
 	run, err := scanRun(tx.QueryRow(ctx, `
-		INSERT INTO runs (task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, codex_session_id, started_at, idempotency_key)
-		VALUES ($1, $2, 'queued', $3, $4, $5, $6, $7, $8, CASE WHEN $2='resume' THEN $9 ELSE NULL END, now(), NULLIF($10, ''))
-		RETURNING id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, final_message, codex_session_id,
+		INSERT INTO runs (task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, reminder_callback_enabled, codex_session_id, started_at, idempotency_key)
+		VALUES ($1, $2, 'queued', $3, $4, $5, $6, $7, $8, $9, CASE WHEN $2='resume' THEN $10 ELSE NULL END, now(), NULLIF($11, ''))
+		RETURNING id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, reminder_callback_enabled, final_message, codex_session_id,
 		          assigned_runner_id, exit_code, error_message, cancel_requested_at, runner_started_at,
 		          started_at, ended_at, created_at`,
-		task.ID, mode, userMessage, prompt, codexModel, reasoningEffort, serviceTier, in.RawCommand, task.CodexSessionID, strings.TrimSpace(in.IdempotencyKey)))
+		task.ID, mode, userMessage, prompt, codexModel, reasoningEffort, serviceTier, in.RawCommand, reminderCallbackEnabled, task.CodexSessionID, strings.TrimSpace(in.IdempotencyKey)))
 	if err != nil {
 		if isUniqueActiveRunViolation(err) {
 			return CreateRunResult{}, ErrActiveRunExists
@@ -261,7 +262,8 @@ func (s *Store) InterruptRun(ctx context.Context, in CreateRunInput, reason stri
 	if err != nil {
 		return InterruptRunResult{}, err
 	}
-	prompt, err := buildRunPrompt(mode, task, in.Message, snapshots, in.RawCommand)
+	reminderCallbackEnabled := in.ReminderCallbackEnabled && !in.RawCommand
+	prompt, err := buildRunPrompt(mode, task, in.Message, snapshots, in.RawCommand, reminderCallbackEnabled)
 	if err != nil {
 		return InterruptRunResult{}, err
 	}
@@ -270,12 +272,12 @@ func (s *Store) InterruptRun(ctx context.Context, in CreateRunInput, reason stri
 		userMessage = strings.TrimSpace(in.Message)
 	}
 	run, err := scanRun(tx.QueryRow(ctx, `
-		INSERT INTO runs (task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, codex_session_id, started_at, idempotency_key)
-		VALUES ($1, $2, 'queued', $3, $4, $5, $6, $7, $8, CASE WHEN $2='resume' THEN $9 ELSE NULL END, $10, NULLIF($11, ''))
-		RETURNING id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, final_message, codex_session_id,
+		INSERT INTO runs (task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, reminder_callback_enabled, codex_session_id, started_at, idempotency_key)
+		VALUES ($1, $2, 'queued', $3, $4, $5, $6, $7, $8, $9, CASE WHEN $2='resume' THEN $10 ELSE NULL END, $11, NULLIF($12, ''))
+		RETURNING id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, reminder_callback_enabled, final_message, codex_session_id,
 		          assigned_runner_id, exit_code, error_message, cancel_requested_at, runner_started_at,
 		          started_at, ended_at, created_at`,
-		task.ID, mode, userMessage, prompt, codexModel, reasoningEffort, serviceTier, in.RawCommand, task.CodexSessionID, now, strings.TrimSpace(in.IdempotencyKey)))
+		task.ID, mode, userMessage, prompt, codexModel, reasoningEffort, serviceTier, in.RawCommand, reminderCallbackEnabled, task.CodexSessionID, now, strings.TrimSpace(in.IdempotencyKey)))
 	if err != nil {
 		if isUniqueActiveRunViolation(err) {
 			return InterruptRunResult{}, ErrActiveRunExists
@@ -344,7 +346,7 @@ func (s *Store) InterruptRun(ctx context.Context, in CreateRunInput, reason stri
 
 func (s *Store) findIdempotentRun(ctx context.Context, tx pgx.Tx, taskID, key string) (Run, bool, error) {
 	row := tx.QueryRow(ctx, `
-		SELECT id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, final_message, codex_session_id,
+		SELECT id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, reminder_callback_enabled, final_message, codex_session_id,
 		       assigned_runner_id, exit_code, error_message, cancel_requested_at, runner_started_at,
 		       started_at, ended_at, created_at
 		FROM runs
@@ -361,7 +363,7 @@ func (s *Store) findIdempotentRun(ctx context.Context, tx pgx.Tx, taskID, key st
 
 func (s *Store) activeRunForTask(ctx context.Context, tx pgx.Tx, taskID string) (Run, error) {
 	row := tx.QueryRow(ctx, `
-		SELECT id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, final_message, codex_session_id,
+		SELECT id, task_id, mode, status, user_message, generated_prompt, codex_model, codex_reasoning_effort, codex_service_tier, raw_command, reminder_callback_enabled, final_message, codex_session_id,
 		       assigned_runner_id, exit_code, error_message, cancel_requested_at, runner_started_at,
 		       started_at, ended_at, created_at
 		FROM runs

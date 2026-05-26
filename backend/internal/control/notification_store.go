@@ -260,6 +260,44 @@ func (s *Store) CreateRunFinishedNotification(ctx context.Context, run Run) (Wor
 	return scanWorkbenchNotification(row)
 }
 
+func (s *Store) CreateCodexReminderNotification(ctx context.Context, runID, title, message string) (WorkbenchNotification, error) {
+	run, err := s.GetRun(ctx, runID)
+	if err != nil {
+		return WorkbenchNotification{}, err
+	}
+	task, err := s.GetTask(ctx, run.TaskID)
+	if err != nil {
+		return WorkbenchNotification{}, err
+	}
+	project, err := s.GetProject(ctx, task.ProjectID)
+	if err != nil {
+		return WorkbenchNotification{}, err
+	}
+	server, err := s.GetServer(ctx, project.ServerID)
+	if err != nil {
+		return WorkbenchNotification{}, err
+	}
+	title = trimNotificationText(title, 160)
+	message = trimNotificationText(message, 1000)
+	if title == "" {
+		title = fmt.Sprintf("Codex reminder: %s", strings.TrimSpace(task.Title))
+	}
+	if message == "" {
+		message = fmt.Sprintf("%s / %s", strings.TrimSpace(project.Name), strings.TrimSpace(task.Title))
+	}
+	row := s.db.QueryRow(ctx, `
+		WITH inserted AS (
+			INSERT INTO workbench_notifications (type, server_id, project_id, task_id, run_id, title, message)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			RETURNING id, type, server_id, project_id, task_id, run_id, run_status, title, message, acknowledged_at, created_at
+		)
+		SELECT n.id, n.type, n.server_id, $8::text AS server_name, n.project_id, $9::text AS project_name,
+		       n.task_id, $10::text AS task_title, n.run_id, n.run_status, n.title, n.message, n.acknowledged_at, n.created_at
+		FROM inserted n`,
+		NotificationTypeCodexReminder, server.ID, project.ID, task.ID, run.ID, title, message, serverDisplayName(server), project.Name, task.Title)
+	return scanWorkbenchNotification(row)
+}
+
 func (s *Store) AcknowledgeWorkbenchNotification(ctx context.Context, id string) (WorkbenchNotification, error) {
 	row := s.db.QueryRow(ctx, `
 		WITH updated AS (
@@ -343,6 +381,24 @@ func normalizeEmailAddresses(values []string) []string {
 
 func containsLineBreak(value string) bool {
 	return strings.ContainsAny(value, "\r\n")
+}
+
+func trimNotificationText(value string, max int) string {
+	value = strings.TrimSpace(value)
+	value = strings.Map(func(r rune) rune {
+		switch r {
+		case '\r', '\n', '\t':
+			return ' '
+		default:
+			return r
+		}
+	}, value)
+	value = strings.Join(strings.Fields(value), " ")
+	runes := []rune(value)
+	if max > 0 && len(runes) > max {
+		value = strings.TrimSpace(string(runes[:max]))
+	}
+	return value
 }
 
 func scanEmailNotificationConfig(row pgx.Row) (EmailNotificationConfig, error) {

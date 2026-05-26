@@ -35,6 +35,12 @@ Prompt construction belongs in the control plane. The runner receives the final
 prompt as opaque text, writes it to Codex stdin, streams Codex JSONL/stdout/stderr
 events back, and reports the final status.
 
+When a user opts into Codex reminders for a run, the control plane adds one
+short instruction mentioning `meridian-notify`. The runner exposes that helper
+only to the Codex process for that run. The helper calls a runner-local
+`127.0.0.1` callback with a per-run token. The token and callback URL are passed
+through process environment variables and must not be written into the prompt.
+
 ## Task Lifecycle
 
 Task states:

@@ -19,17 +19,18 @@ import (
 )
 
 type Assignment struct {
-	RunID           string   `json:"run_id"`
-	TaskID          string   `json:"task_id"`
-	ProjectID       string   `json:"project_id"`
-	Workdir         string   `json:"workdir"`
-	Mode            string   `json:"mode"`
-	CodexSessionID  *string  `json:"codex_session_id"`
-	CodexModel      *string  `json:"codex_model,omitempty"`
-	ReasoningEffort *string  `json:"codex_reasoning_effort,omitempty"`
-	ServiceTier     *string  `json:"codex_service_tier,omitempty"`
-	Prompt          string   `json:"prompt"`
-	Argv            []string `json:"argv"`
+	RunID                   string   `json:"run_id"`
+	TaskID                  string   `json:"task_id"`
+	ProjectID               string   `json:"project_id"`
+	Workdir                 string   `json:"workdir"`
+	Mode                    string   `json:"mode"`
+	CodexSessionID          *string  `json:"codex_session_id"`
+	CodexModel              *string  `json:"codex_model,omitempty"`
+	ReasoningEffort         *string  `json:"codex_reasoning_effort,omitempty"`
+	ServiceTier             *string  `json:"codex_service_tier,omitempty"`
+	ReminderCallbackEnabled bool     `json:"reminder_callback_enabled,omitempty"`
+	Prompt                  string   `json:"prompt"`
+	Argv                    []string `json:"argv"`
 }
 
 type CodexEvent struct {

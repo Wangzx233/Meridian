@@ -210,8 +210,8 @@ func TestBuildPromptAlwaysIncludesTaskDescription(t *testing.T) {
 
 func TestBuildPromptAddsLightReminderInstructionWhenEnabled(t *testing.T) {
 	prompt := buildPrompt(RunModeNew, Task{Title: "Long task"}, "Run checks", nil, true)
-	if count := strings.Count(prompt, "meridian-notify"); count != 1 {
-		t.Fatalf("prompt meridian-notify count = %d, want 1:\n%s", count, prompt)
+	if count := strings.Count(prompt, "send-back"); count != 1 {
+		t.Fatalf("prompt send-back count = %d, want 1:\n%s", count, prompt)
 	}
 	if strings.Contains(prompt, "MERIDIAN_NOTIFY_TOKEN") || strings.Contains(prompt, "127.0.0.1") {
 		t.Fatalf("prompt leaked callback internals:\n%s", prompt)

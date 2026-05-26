@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const notifyHelperName = "meridian-notify"
+var notifyHelperNames = []string{"send-back", "meridian-notify"}
 
 var notifyHelperDir struct {
 	sync.Mutex
@@ -39,15 +39,17 @@ func ensureNotifyHelperDir() (string, error) {
 		notifyHelperDir.err = err
 		return "", err
 	}
-	if runtime.GOOS == "windows" {
-		script := "@echo off\r\n\"" + exe + "\" notify-helper %*\r\n"
-		notifyHelperDir.err = os.WriteFile(filepath.Join(dir, notifyHelperName+".cmd"), []byte(script), 0o600)
-	} else {
-		script := "#!/bin/sh\nexec '" + strings.ReplaceAll(exe, "'", "'\"'\"'") + "' notify-helper \"$@\"\n"
-		notifyHelperDir.err = os.WriteFile(filepath.Join(dir, notifyHelperName), []byte(script), 0o700)
-	}
-	if notifyHelperDir.err != nil {
-		return "", notifyHelperDir.err
+	for _, name := range notifyHelperNames {
+		if runtime.GOOS == "windows" {
+			script := "@echo off\r\n\"" + exe + "\" notify-helper %*\r\n"
+			notifyHelperDir.err = os.WriteFile(filepath.Join(dir, name+".cmd"), []byte(script), 0o600)
+		} else {
+			script := "#!/bin/sh\nexec '" + strings.ReplaceAll(exe, "'", "'\"'\"'") + "' notify-helper \"$@\"\n"
+			notifyHelperDir.err = os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700)
+		}
+		if notifyHelperDir.err != nil {
+			return "", notifyHelperDir.err
+		}
 	}
 	notifyHelperDir.path = dir
 	return dir, nil
@@ -62,7 +64,7 @@ func RunNotifyHelper(args []string, stdout, stderr io.Writer) int {
 	url := strings.TrimSpace(os.Getenv("MERIDIAN_NOTIFY_URL"))
 	token := strings.TrimSpace(os.Getenv("MERIDIAN_NOTIFY_TOKEN"))
 	if url == "" || token == "" {
-		fmt.Fprintln(stderr, "Meridian reminder callback is not available in this process.")
+		fmt.Fprintln(stderr, "Send back is not available in this process.")
 		return 1
 	}
 	body, _ := json.Marshal(map[string]string{
@@ -85,10 +87,10 @@ func RunNotifyHelper(args []string, stdout, stderr io.Writer) int {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		text, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		fmt.Fprintf(stderr, "Meridian reminder callback failed: %s %s\n", resp.Status, strings.TrimSpace(string(text)))
+		fmt.Fprintf(stderr, "Send back failed: %s %s\n", resp.Status, strings.TrimSpace(string(text)))
 		return 1
 	}
-	fmt.Fprintln(stdout, "Meridian reminder sent.")
+	fmt.Fprintln(stdout, "Sent back.")
 	return 0
 }
 
@@ -120,7 +122,7 @@ func parseNotifyHelperArgs(args []string) (string, string, error) {
 	title = strings.TrimSpace(title)
 	message = strings.TrimSpace(message)
 	if title == "" && message == "" {
-		return "", "", errors.New("usage: meridian-notify --title \"...\" --message \"...\"")
+		return "", "", errors.New("usage: send-back --title \"...\" --message \"...\"")
 	}
 	return title, message, nil
 }

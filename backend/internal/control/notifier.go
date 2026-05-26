@@ -22,6 +22,11 @@ type TaskCompletionNotification struct {
 	Completed time.Time
 }
 
+type WorkbenchEmailNotification struct {
+	Notification WorkbenchNotification
+	CreatedAt    time.Time
+}
+
 func (a *API) notifyTaskDoneAsync(task Task, summary string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -70,7 +75,48 @@ func (a *API) notifyTaskDone(ctx context.Context, task Task, summary string) err
 	return nil
 }
 
+func (a *API) notifyWorkbenchNotificationAsync(notification WorkbenchNotification) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := a.notifyWorkbenchNotification(ctx, notification); err != nil {
+			a.logger.Warn("workbench email notification failed", "notification_id", notification.ID, "error", err)
+		}
+	}()
+}
+
+func (a *API) notifyWorkbenchNotification(ctx context.Context, notification WorkbenchNotification) error {
+	configs, err := a.store.ListEmailNotificationConfigs(ctx, true)
+	if err != nil {
+		return err
+	}
+	if len(configs) == 0 {
+		return nil
+	}
+	payload := WorkbenchEmailNotification{
+		Notification: notification,
+		CreatedAt:    notification.CreatedAt,
+	}
+	for _, cfg := range configs {
+		if !cfg.Enabled {
+			continue
+		}
+		if err := sendWorkbenchEmail(ctx, cfg, payload); err != nil {
+			a.logger.Warn("send workbench email failed", "notification_id", notification.ID, "config_id", cfg.ID, "error", err)
+		}
+	}
+	return nil
+}
+
 func sendTaskCompletionEmail(ctx context.Context, cfg EmailNotificationConfig, notification TaskCompletionNotification) error {
+	return sendEmail(ctx, cfg, buildTaskCompletionEmail(cfg, notification))
+}
+
+func sendWorkbenchEmail(ctx context.Context, cfg EmailNotificationConfig, notification WorkbenchEmailNotification) error {
+	return sendEmail(ctx, cfg, buildWorkbenchEmail(cfg, notification))
+}
+
+func sendEmail(ctx context.Context, cfg EmailNotificationConfig, message []byte) error {
 	address := net.JoinHostPort(cfg.SMTPHost, fmt.Sprintf("%d", cfg.SMTPPort))
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	var conn net.Conn
@@ -118,13 +164,11 @@ func sendTaskCompletionEmail(ctx context.Context, cfg EmailNotificationConfig, n
 	if err := client.Mail(from.Address); err != nil {
 		return err
 	}
-	recipients := make([]string, 0, len(cfg.ToAddresses))
 	for _, raw := range cfg.ToAddresses {
 		to, err := mail.ParseAddress(raw)
 		if err != nil {
 			return err
 		}
-		recipients = append(recipients, to.Address)
 		if err := client.Rcpt(to.Address); err != nil {
 			return err
 		}
@@ -133,7 +177,7 @@ func sendTaskCompletionEmail(ctx context.Context, cfg EmailNotificationConfig, n
 	if err != nil {
 		return err
 	}
-	if _, err := writer.Write(buildTaskCompletionEmail(cfg, recipients, notification)); err != nil {
+	if _, err := writer.Write(message); err != nil {
 		_ = writer.Close()
 		return err
 	}
@@ -151,14 +195,24 @@ func tlsConfigForHost(host string) *tls.Config {
 	}
 }
 
-func buildTaskCompletionEmail(cfg EmailNotificationConfig, recipients []string, notification TaskCompletionNotification) []byte {
+func buildTaskCompletionEmail(cfg EmailNotificationConfig, notification TaskCompletionNotification) []byte {
 	subject := strings.TrimSpace(fmt.Sprintf("%s Task completed: %s", cfg.SubjectPrefix, notification.Task.Title))
 	body := buildTaskCompletionEmailBody(notification)
+	return buildPlainTextEmail(cfg, subject, notification.Completed, body)
+}
+
+func buildWorkbenchEmail(cfg EmailNotificationConfig, notification WorkbenchEmailNotification) []byte {
+	subject := strings.TrimSpace(fmt.Sprintf("%s %s", cfg.SubjectPrefix, notification.Notification.Title))
+	body := buildWorkbenchEmailBody(notification)
+	return buildPlainTextEmail(cfg, subject, notification.CreatedAt, body)
+}
+
+func buildPlainTextEmail(cfg EmailNotificationConfig, subject string, date time.Time, body string) []byte {
 	var b bytes.Buffer
 	writeHeader(&b, "From", cfg.FromAddress)
-	writeHeader(&b, "To", strings.Join(recipients, ", "))
+	writeHeader(&b, "To", strings.Join(emailRecipients(cfg), ", "))
 	writeHeader(&b, "Subject", subject)
-	writeHeader(&b, "Date", notification.Completed.Format(time.RFC1123Z))
+	writeHeader(&b, "Date", date.Format(time.RFC1123Z))
 	writeHeader(&b, "MIME-Version", "1.0")
 	writeHeader(&b, "Content-Type", `text/plain; charset="UTF-8"`)
 	writeHeader(&b, "Content-Transfer-Encoding", "quoted-printable")
@@ -167,6 +221,19 @@ func buildTaskCompletionEmail(cfg EmailNotificationConfig, recipients []string, 
 	_, _ = qp.Write([]byte(body))
 	_ = qp.Close()
 	return b.Bytes()
+}
+
+func emailRecipients(cfg EmailNotificationConfig) []string {
+	recipients := make([]string, 0, len(cfg.ToAddresses))
+	for _, raw := range cfg.ToAddresses {
+		to, err := mail.ParseAddress(raw)
+		if err != nil {
+			recipients = append(recipients, raw)
+			continue
+		}
+		recipients = append(recipients, to.Address)
+	}
+	return recipients
 }
 
 func writeHeader(b *bytes.Buffer, key, value string) {
@@ -198,4 +265,25 @@ Completed at: %s
 Summary:
 %s
 `, notification.Task.Title, notification.Task.ID, notification.Project.Name, notification.Server.Name, notification.Completed.Format(time.RFC3339), summary)
+}
+
+func buildWorkbenchEmailBody(notification WorkbenchEmailNotification) string {
+	n := notification.Notification
+	status := ""
+	if n.RunStatus != nil && *n.RunStatus != "" {
+		status = "\nRun status: " + *n.RunStatus
+	}
+	runID := ""
+	if n.RunID != nil && *n.RunID != "" {
+		runID = "\nRun ID: " + *n.RunID
+	}
+	return fmt.Sprintf(`A workbench notice needs attention.
+
+Title: %s
+Message: %s
+Task: %s
+Project: %s
+Server: %s%s%s
+Created at: %s
+`, n.Title, n.Message, n.TaskTitle, n.ProjectName, n.ServerName, status, runID, notification.CreatedAt.Format(time.RFC3339))
 }

@@ -200,6 +200,7 @@ func (a *API) handleRunnerWS(w http.ResponseWriter, r *http.Request) {
 				a.logger.Warn("create codex reminder notification failed", "run_id", payload.RunID, "error", err)
 				continue
 			}
+			a.notifyWorkbenchNotificationAsync(notification)
 			a.logger.Info("codex reminder created", "runner_id", runnerID, "run_id", payload.RunID, "notification_id", notification.ID)
 		case "run.cancel_ack":
 			var payload RunCancelAckPayload

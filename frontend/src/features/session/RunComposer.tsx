@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   Archive,
-  Bell,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -32,6 +31,7 @@ import {
   Terminal,
   TerminalSquare,
   Trash2,
+  Reply,
   X,
   Zap,
 } from "lucide-react";
@@ -159,7 +159,7 @@ export function RunComposer(props: {
             disabled={!props.canUseReminderCallbacks || props.submitting || props.interrupting}
             title={props.canUseReminderCallbacks ? t("composer.remindersTitle") : props.reminderCallbacksBlockedReason}
           >
-            <Bell size={14} />
+            <Reply size={14} />
             {t("composer.reminders")}
           </button>
           <button

@@ -39,6 +39,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import type { Run, RunEvent } from "../../types";
 import { useRunEventStream } from "../../hooks";
 import { eventSummary, formatDateTime, runDuration, shortId } from "../../utils";
+import { useI18n } from "../../shared/i18n";
 import type { LoadState } from "../../shared/loadState";
 import { MarkdownContent } from "../../shared/MarkdownContent";
 import { EmptyState, Fact, InlineNotice, LoadBoundary, PanelHeader, StatusBadge } from "../../shared/ui";
@@ -315,7 +316,23 @@ function nestedText(value: unknown, paths: string[][]) {
 }
 
 
-export function PromptPanel(props: { run: Run | null }) {
+export function PromptPanel(props: { run: Run | null; draftPrompt?: string; draftActive?: boolean }) {
+  const { t } = useI18n();
+
+  if (props.draftActive) {
+    return (
+      <section className="promptPanel" aria-label={t("prompt.pendingAria")}>
+        <div className="detailHeader">
+          <div>
+            <h3>{t("prompt.pendingTitle")}</h3>
+            <p>{t("prompt.pendingBody")}</p>
+          </div>
+        </div>
+        <pre className="promptPreview">{props.draftPrompt || t("prompt.pendingEmpty")}</pre>
+      </section>
+    );
+  }
+
   if (!props.run) {
     return (
       <section className="promptPanel" aria-label="Generated prompt">

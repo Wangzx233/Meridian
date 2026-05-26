@@ -66,7 +66,7 @@ func buildPrompt(mode string, task Task, message string, items []contextSnapshot
 		b.WriteString("- Complete this turn and explain changes, verification, and next steps.\n")
 	}
 	if reminderCallbackEnabled {
-		b.WriteString("- Optional: for a long background wait, append `meridian-notify --title \"...\" --message \"...\"` so the workbench reminds the user when attention is needed; normal run completion already notifies.\n")
+		b.WriteString("- Optional: if a long wait needs the user's attention before the run finishes, append `send-back --title \"...\" --message \"...\"` after the long command; normal completion notices still happen.\n")
 	}
 	return b.String()
 }

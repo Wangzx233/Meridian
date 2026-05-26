@@ -280,7 +280,7 @@ func (s *Store) CreateCodexReminderNotification(ctx context.Context, runID, titl
 	title = trimNotificationText(title, 160)
 	message = trimNotificationText(message, 1000)
 	if title == "" {
-		title = fmt.Sprintf("Codex reminder: %s", strings.TrimSpace(task.Title))
+		title = fmt.Sprintf("Needs attention: %s", strings.TrimSpace(task.Title))
 	}
 	if message == "" {
 		message = fmt.Sprintf("%s / %s", strings.TrimSpace(project.Name), strings.TrimSpace(task.Title))

@@ -219,7 +219,7 @@ and `xhigh`. Supported service tier override values currently include `fast`.
 `raw_command` is reserved for explicit Codex slash-command turns such as
 `/compact`, where the stored prompt is sent to Codex without workbench wrapping.
 `reminder_callback_enabled` records whether this run was allowed to expose the
-runner-local `meridian-notify` helper to Codex.
+runner-local `send-back` helper to Codex.
 
 ### Context Item
 
@@ -866,6 +866,9 @@ Rules:
   `codex_reminder`. `run_finished` notifications include `run_id` and terminal
   `run_status`; `codex_reminder` notifications include `run_id` and use the
   message supplied through the runner-local callback.
+- `codex_reminder` uses the same pending notification tray as normal
+  workbench notices. If enabled email settings exist, the same notice is also
+  sent by email on a best-effort basis.
 - `server_name` is the server alias when present, otherwise the registered
   server name.
 - Pending notification queries exclude `task_done`; that type is retained only
@@ -1330,7 +1333,7 @@ When run options are set, they appear before `exec`, for example
 "model_reasoning_effort=\"high\"", "exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "--json", "-"]`.
 
 The runner writes `prompt` to Codex stdin.
-When `reminder_callback_enabled` is true, the runner adds `meridian-notify` to
+When `reminder_callback_enabled` is true, the runner adds `send-back` to
 the Codex process PATH and injects a per-run local callback URL/token through
 environment variables. The callback listener binds only to `127.0.0.1`.
 
@@ -1468,8 +1471,9 @@ Direction: runner to control plane.
 
 Rules:
 
-- Runners send this only after a run-local `meridian-notify` helper call.
-- The control plane creates a pending `codex_reminder` notification.
+- Runners send this only after a run-local `send-back` helper call.
+- The control plane creates a pending `codex_reminder` notification and, when
+  email notifications are configured, sends the same notice by email.
 - The runner callback URL and token are never part of `generated_prompt`.
 
 ### `runner.update`

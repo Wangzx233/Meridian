@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   Archive,
-  Bell,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -62,7 +61,6 @@ import { composerDefaultHeight, composerMaxHeight, composerMinHeight, sidePanelD
 import { useI18n } from "../../shared/i18n";
 import { serverDisplayName } from "../../shared/serverDisplay";
 import { useStoredPanelSize, useStoredString } from "../../shared/storage";
-import { runnerCapabilityBlockedReason } from "../../shared/runnerCapabilities";
 import { EmptyState, Fact, LoadingState, ResizeHandle, StatusBadge } from "../../shared/ui";
 import { AgentsFilePanel } from "../agents/AgentsFilePanel";
 import { ContextPanel } from "../context/ContextPanel";
@@ -154,7 +152,7 @@ export function TaskSessionPanel(props: {
     (value: CodexServiceTier) => void,
   ];
   const [goalMode, setGoalMode] = useState(false);
-  const [reminderCallbacksEnabled, setReminderCallbacksEnabled] = useStoredString("ctw.reminderCallbacksEnabled", "");
+  const [reminderCallbacksEnabled, setReminderCallbacksEnabled] = useState(false);
   const [taskMemory, setTaskMemory] = useState<TaskMemoryDraft>(emptyTaskMemoryDraft());
   const [memoryDetailsOpen, setMemoryDetailsOpen] = useState(false);
   const [memoryDraftRunId, setMemoryDraftRunId] = useState<string | null>(null);
@@ -224,6 +222,7 @@ export function TaskSessionPanel(props: {
     setSelectedContextIds([]);
     setMode("auto");
     setGoalMode(false);
+    setReminderCallbacksEnabled(false);
     setTaskMemory(emptyTaskMemoryDraft());
     setMemoryDetailsOpen(false);
     setMemoryDraftRunId(null);
@@ -272,7 +271,14 @@ export function TaskSessionPanel(props: {
   const canCompact = canSend && hasObservedSession;
   const canChangeGoal = canSend && hasObservedSession;
   const canUseCodexReminders = props.server?.runner_connected === true && props.server.runner_capabilities?.codex_reminders === true;
-  const reminderCallbacksOn = canUseCodexReminders && reminderCallbacksEnabled === "true";
+  const reminderCallbacksOn = canUseCodexReminders && reminderCallbacksEnabled;
+  const selectedContextItems = selectedContextIds
+    .map((id) => props.contextItems.find((item) => item.id === id))
+    .filter((item): item is ContextItem => Boolean(item));
+  const draftPrompt = props.task
+    ? buildDraftPromptPreview(props.task, mode, hasObservedSession, message, selectedContextItems, reminderCallbacksOn)
+    : "";
+  const draftPromptActive = Boolean(props.task && (message.trim() || selectedContextIds.length > 0 || reminderCallbacksOn));
   const activeWorkspaceTab = activeWorkbenchTab;
   const mountedWorkspaceTabs = visitedWorkbenchTabs;
 
@@ -345,6 +351,7 @@ export function TaskSessionPanel(props: {
       context_item_ids: selectedContextIds,
     });
     clearMessageDraft();
+    setReminderCallbacksEnabled(false);
     setSelectedContextIds([]);
   };
 
@@ -397,6 +404,7 @@ export function TaskSessionPanel(props: {
       context_item_ids: selectedContextIds,
     });
     clearMessageDraft();
+    setReminderCallbacksEnabled(false);
     setSelectedContextIds([]);
   };
 
@@ -801,12 +809,12 @@ export function TaskSessionPanel(props: {
               goalMode={goalMode}
               onGoalModeChange={submitGoalToggle}
               reminderCallbacksEnabled={reminderCallbacksOn}
-              onReminderCallbacksChange={() => setReminderCallbacksEnabled(reminderCallbacksOn ? "" : "true")}
+              onReminderCallbacksChange={() => setReminderCallbacksEnabled((value) => !value)}
               canUseReminderCallbacks={canUseCodexReminders}
               reminderCallbacksBlockedReason={
                 canUseCodexReminders
                   ? undefined
-                  : runnerCapabilityBlockedReason(props.server, "codex_reminders", "Codex reminders")
+                  : returnNoticeBlockedReason(props.server, t)
               }
               contextCount={selectedContextIds.length}
               disabled={!canSend || props.creatingRun}
@@ -954,7 +962,9 @@ export function TaskSessionPanel(props: {
               />
             ) : null}
 
-            {activeSideTab === "prompt" ? <PromptPanel run={props.selectedRun} /> : null}
+            {activeSideTab === "prompt" ? (
+              <PromptPanel run={props.selectedRun} draftPrompt={draftPrompt} draftActive={draftPromptActive} />
+            ) : null}
           </div>
 
         </aside>
@@ -1007,6 +1017,68 @@ function normalizeGoalText(value: string) {
 
 function isGoalCommand(message: string) {
   return message === "/goal" || message.startsWith("/goal ");
+}
+
+function returnNoticeBlockedReason(server: Server | null, t: (key: string) => string) {
+  if (!server) {
+    return t("composer.sendBackNoServer");
+  }
+  if (!server.runner_connected) {
+    return t("composer.sendBackOffline");
+  }
+  return t("composer.sendBackNeedsUpdate");
+}
+
+function buildDraftPromptPreview(
+  task: Task,
+  mode: CreateRunMode,
+  hasObservedSession: boolean,
+  message: string,
+  items: ContextItem[],
+  returnNoticeEnabled: boolean,
+) {
+  const command = message.trim();
+  if (command && (command === "/compact" || isGoalCommand(command))) {
+    return command;
+  }
+  const resolvedMode = mode === "auto" ? (hasObservedSession ? "resume" : "new") : mode;
+  const lines: string[] = [];
+  lines.push("Current task:", task.title, "", "Description:");
+  lines.push(task.description.trim() || "(no description provided)", "");
+  if (resolvedMode === "resume") {
+    lines.push("Continue the current Codex session for this task.", "");
+  }
+  lines.push("User instruction for this turn:", message, "");
+  lines.push(resolvedMode === "resume" ? "Additional context selected for this turn:" : "Selected context:");
+  if (items.length === 0) {
+    lines.push("(none)", "");
+  } else {
+    items.forEach((item, index) => {
+      lines.push(`Context item ${index + 1} [${item.type}]: ${item.title}`, item.content, "");
+    });
+  }
+  lines.push("Instructions:");
+  if (resolvedMode === "resume") {
+    lines.push(
+      "- Continue from the existing Codex session.",
+      "- Do not repeat already completed work unless needed.",
+      "- Current repository code is authoritative.",
+      "- Use the current task title and description above as the scope for this turn.",
+    );
+  } else {
+    lines.push(
+      "- First inspect the current repository before deciding.",
+      "- Historical context is background only.",
+      "- Current repository code is authoritative if it conflicts with context.",
+      "- Complete this turn and explain changes, verification, and next steps.",
+    );
+  }
+  if (returnNoticeEnabled) {
+    lines.push(
+      '- Optional: if a long wait needs the user\'s attention before the run finishes, append `send-back --title "..." --message "..."` after the long command; normal completion notices still happen.',
+    );
+  }
+  return lines.join("\n");
 }
 
 function projectFilePathFromHref(href: string, projectWorkdir: string): string | null {

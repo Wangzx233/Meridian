@@ -2206,10 +2206,14 @@ textarea:disabled {
   min-height: 0;
   height: 100%;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   padding: 10px 12px;
   overflow: hidden;
+}
+
+.outputWorkspace.hasRunError {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .outputToolbar,
@@ -2309,6 +2313,10 @@ textarea:disabled {
 
 .conversationViewport {
   padding: 14px;
+  grid-row: 2;
+}
+
+.outputWorkspace.hasRunError .conversationViewport {
   grid-row: 3;
 }
 
@@ -3577,6 +3585,7 @@ textarea:disabled {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) 0 48px;
     overflow: hidden;
+    background: var(--surface);
   }
 
   .primaryWorkspace:not(.composerCollapsed) {
@@ -3686,6 +3695,7 @@ textarea:disabled {
     height: 100%;
     min-height: 0;
     overflow: hidden;
+    background: var(--surface);
   }
 
   .conversationViewport {
@@ -3694,9 +3704,13 @@ textarea:disabled {
   }
 
   .outputWorkspace {
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 6px;
     padding: 8px 10px;
+  }
+
+  .outputWorkspace.hasRunError {
+    grid-template-rows: auto auto minmax(0, 1fr);
   }
 
   .outputToolbar {

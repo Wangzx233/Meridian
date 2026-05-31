@@ -78,7 +78,7 @@ export function RunOutputWorkspace(props: {
   }
 
   return (
-    <section className="outputWorkspace" aria-label="Codex output">
+    <section className={`outputWorkspace ${props.run.error_message ? "hasRunError" : ""}`} aria-label="Codex output">
       <div className="outputToolbar">
         <div className="outputTitleBlock">
           <div className="rowTop">

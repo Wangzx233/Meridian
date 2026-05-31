@@ -2229,6 +2229,10 @@ textarea:disabled {
   min-width: 0;
 }
 
+.mobileOutputStatus {
+  display: none;
+}
+
 .outputTitleBlock {
   min-width: 0;
 }
@@ -2305,6 +2309,7 @@ textarea:disabled {
 
 .conversationViewport {
   padding: 14px;
+  grid-row: 3;
 }
 
 .messageBlock {
@@ -3396,11 +3401,22 @@ textarea:disabled {
   .topBar {
     height: auto;
     min-height: var(--topbar-h);
-    align-items: flex-start;
+    align-items: center;
+    gap: 10px;
+    padding: 7px max(10px, env(safe-area-inset-right)) 7px max(10px, env(safe-area-inset-left));
   }
 
   .topBarMeta {
     margin-left: auto;
+    gap: 6px;
+  }
+
+  .brandBlock p {
+    display: none;
+  }
+
+  .desktopTopBarAction {
+    display: none !important;
   }
 
   .notificationPopover {
@@ -3436,8 +3452,23 @@ textarea:disabled {
   }
 
   .mobileWorkspaceSwitch strong {
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     font-size: 14px;
     line-height: 1.25;
+  }
+
+  .mobileWorkspaceSwitch strong > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobileWorkspaceSwitch .statusBadge {
+    max-width: 86px;
   }
 
   .mobileWorkspaceSwitch small {
@@ -3513,7 +3544,7 @@ textarea:disabled {
   }
 
   .sessionHeader {
-    padding: 8px 12px;
+    display: none;
   }
 
   .sessionFacts {
@@ -3544,12 +3575,12 @@ textarea:disabled {
     max-height: 100%;
     align-self: stretch;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr) 0 52px;
+    grid-template-rows: auto minmax(0, 1fr) 0 48px;
     overflow: hidden;
   }
 
   .primaryWorkspace:not(.composerCollapsed) {
-    grid-template-rows: auto minmax(96px, 1fr) 0 clamp(188px, 34dvh, 280px);
+    grid-template-rows: auto minmax(0, 1fr) 0 clamp(136px, 26dvh, 188px);
   }
 
   .sidePanel {
@@ -3639,7 +3670,7 @@ textarea:disabled {
   .composer {
     height: 100%;
     min-height: 0;
-    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
     overflow-y: auto;
     border-top: 1px solid var(--border);
   }
@@ -3660,6 +3691,48 @@ textarea:disabled {
   .conversationViewport {
     min-height: 0;
     height: 100%;
+  }
+
+  .outputWorkspace {
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .outputToolbar {
+    align-items: center;
+    gap: 8px;
+  }
+
+  .outputTitleBlock {
+    display: none;
+  }
+
+  .mobileOutputStatus {
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .mobileOutputStatus > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .runPicker {
+    flex: 1;
+    min-width: 0;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .conversationViewport {
+    border-radius: var(--radius-sm);
+    padding: 10px;
   }
 
   .terminalPanel,
@@ -3914,6 +3987,20 @@ textarea:disabled {
     grid-template-columns: 1fr;
   }
 
+  .outputToolbar {
+    align-items: center;
+    flex-direction: row;
+  }
+
+  .outputToolbar .markdownSwitch {
+    display: none;
+  }
+
+  .outputToolbar .runPicker {
+    width: auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
   .messageBlock {
     grid-template-columns: 1fr;
     gap: 5px;
@@ -3955,7 +4042,7 @@ textarea:disabled {
   }
 
   .instructionInput {
-    min-height: 132px;
+    min-height: 58px;
     font-size: 16px;
   }
 

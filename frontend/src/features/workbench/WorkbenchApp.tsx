@@ -759,7 +759,7 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
             ) : null}
           </div>
           <button
-            className={`iconButton ${settingsOpen ? "isActive" : ""}`}
+            className={`iconButton desktopTopBarAction ${settingsOpen ? "isActive" : ""}`}
             type="button"
             onClick={() => setSettingsOpen(true)}
             aria-label={t("app.settings")}
@@ -767,7 +767,7 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
           >
             <SettingsIcon size={16} />
           </button>
-          <div className="runnerInstallMenu">
+          <div className="runnerInstallMenu desktopTopBarAction">
             <button
               className={`iconButton ${installerOpen ? "isActive" : ""}`}
               type="button"
@@ -799,11 +799,11 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
             <Languages size={15} />
             <span>{t("app.languageValue")}</span>
           </button>
-          <button className="iconButton" type="button" onClick={refreshAll} aria-label={t("app.refreshAria")} title={t("app.refresh")}>
+          <button className="iconButton desktopTopBarAction" type="button" onClick={refreshAll} aria-label={t("app.refreshAria")} title={t("app.refresh")}>
             <RefreshCw size={16} />
           </button>
           <button
-            className="iconButton"
+            className="iconButton desktopTopBarAction"
             type="button"
             onClick={props.onLogout}
             disabled={props.loggingOut}
@@ -843,7 +843,10 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
         aria-expanded={mobilePickerOpen}
       >
         <span>
-          <strong>{selectedTask?.title ?? t("mobile.noTask")}</strong>
+          <strong>
+            <span>{selectedTask?.title ?? t("mobile.noTask")}</span>
+            {selectedTask ? <StatusBadge status={selectedTask.status} /> : null}
+          </strong>
           <small>
             {serverDisplayName(selectedServer) || t("session.unknownServer")} / {selectedProject?.name ?? t("tasks.noProject")}
           </small>

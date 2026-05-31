@@ -87,6 +87,10 @@ export function RunOutputWorkspace(props: {
           </div>
           <p>{streamStateLabel(state, props.active)} · {visibleEvents.length} events · {runDuration(props.run)}</p>
         </div>
+        <div className="mobileOutputStatus" aria-label="Run status">
+          <StatusBadge status={props.run.status} />
+          <span>{streamStateLabel(state, props.active)}</span>
+        </div>
         <div className="runPicker">
           <label className="markdownSwitch" htmlFor="render-markdown">
             <input

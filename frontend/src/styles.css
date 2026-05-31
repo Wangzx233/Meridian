@@ -3302,6 +3302,7 @@ textarea:disabled {
 .mobilePickerSection,
 .mobilePickerList,
 .mobilePickerRow,
+.mobileSheetHandleButton,
 .mobileSheetHandle {
   display: none;
 }
@@ -3512,12 +3513,17 @@ textarea:disabled {
   .workbenchBody {
     min-height: 0;
     display: grid;
-    grid-template-rows: minmax(0, 1fr) 52px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     overflow: hidden;
   }
 
+  .workbenchBody.sidePanelCollapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .workbenchBody:not(.composerCollapsedMobile) {
-    grid-template-rows: minmax(0, 1fr) minmax(230px, 38dvh);
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .primaryWorkspace {
@@ -3528,7 +3534,7 @@ textarea:disabled {
   }
 
   .primaryWorkspace:not(.composerCollapsed) {
-    grid-template-rows: auto minmax(0, 1fr) 0 100%;
+    grid-template-rows: auto minmax(96px, 1fr) 0 clamp(188px, 34dvh, 280px);
   }
 
   .sidePanel {
@@ -3546,6 +3552,13 @@ textarea:disabled {
     border-radius: 14px 14px 0 0;
     box-shadow: 0 -18px 42px rgb(23 32 26 / 18%);
     padding-bottom: env(safe-area-inset-bottom);
+    transform: translateY(var(--sheet-drag-y, 0));
+    transition: transform 180ms ease;
+    touch-action: pan-y;
+  }
+
+  .sidePanel.isDragging {
+    transition: none;
   }
 
   .sideRail {
@@ -3561,12 +3574,32 @@ textarea:disabled {
     box-shadow: var(--shadow);
   }
 
+  .mobileSheetHandleButton {
+    width: 100%;
+    min-height: 44px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 10px 0 6px;
+    border: 0;
+    border-radius: 14px 14px 0 0;
+    background: transparent;
+    color: inherit;
+    cursor: grab;
+    touch-action: none;
+    transition: background-color 160ms ease;
+  }
+
+  .mobileSheetHandleButton:active {
+    background: var(--surface-subtle);
+    cursor: grabbing;
+  }
+
   .mobileSheetHandle {
     width: 44px;
     height: 4px;
     display: block;
     justify-self: center;
-    margin-top: 8px;
     border-radius: 999px;
     background: var(--border-strong);
   }

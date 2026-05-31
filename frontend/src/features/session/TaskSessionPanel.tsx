@@ -36,7 +36,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties, FormEvent } from "react";
+import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { api } from "../../api";
 import type {
   CodexReasoningEffort,
@@ -168,8 +168,9 @@ export function TaskSessionPanel(props: {
   const [projectFileOpenRequest, setProjectFileOpenRequest] = useState<ProjectFileOpenRequest | null>(null);
   const projectFileOpenRequestIdRef = useRef(0);
   const currentProjectIdRef = useRef(projectId);
-  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
+  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(() => isMobileWorkbenchLayout());
   const [composerCollapsed, setComposerCollapsed] = useState(false);
+  const [sidePanelDrag, setSidePanelDrag] = useState<{ pointerId: number; startY: number; currentY: number } | null>(null);
   const [sidePanelWidth, setSidePanelWidth] = useStoredPanelSize(
     "ctw.sidePanelWidth",
     sidePanelDefaultWidth,
@@ -227,6 +228,14 @@ export function TaskSessionPanel(props: {
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
   }, []);
+
+  useEffect(() => {
+    if (!mobileLayout) {
+      return;
+    }
+    setSidePanelCollapsed(true);
+    setComposerCollapsed(false);
+  }, [mobileLayout, props.task?.id]);
 
   useEffect(() => {
     setSelectedContextIds([]);
@@ -291,9 +300,54 @@ export function TaskSessionPanel(props: {
   const draftPromptActive = Boolean(props.task && (message.trim() || selectedContextIds.length > 0 || reminderCallbacksOn));
   const activeWorkspaceTab = visibleWorkspaceTab;
   const mountedWorkspaceTabs = Array.from(new Set<WorkbenchTab>(["output", activeWorkspaceTab, ...visitedWorkbenchTabs]));
+  const sidePanelDragOffset = sidePanelDrag ? Math.max(0, sidePanelDrag.currentY - sidePanelDrag.startY) : 0;
 
   const selectWorkbenchTab = (tab: WorkbenchTab) => {
     setActiveWorkbenchTab(tab);
+  };
+
+  const collapseSidePanel = () => {
+    setSidePanelDrag(null);
+    setSidePanelCollapsed(true);
+  };
+
+  const startSidePanelDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!mobileLayout || event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setSidePanelDrag({ pointerId: event.pointerId, startY: event.clientY, currentY: event.clientY });
+  };
+
+  const moveSidePanelDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!sidePanelDrag || sidePanelDrag.pointerId !== event.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    setSidePanelDrag({ ...sidePanelDrag, currentY: event.clientY });
+  };
+
+  const finishSidePanelDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!sidePanelDrag || sidePanelDrag.pointerId !== event.pointerId) {
+      return;
+    }
+    const totalDrag = event.clientY - sidePanelDrag.startY;
+    const dragDistance = Math.max(0, totalDrag);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setSidePanelDrag(null);
+    if (dragDistance > 64 || Math.abs(totalDrag) < 6) {
+      setSidePanelCollapsed(true);
+    }
+  };
+
+  const cancelSidePanelDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setSidePanelDrag(null);
   };
 
   const handleProjectFileLinkClick = (href: string) => {
@@ -881,104 +935,119 @@ export function TaskSessionPanel(props: {
             </button>
           </aside>
         ) : (
-        <aside className="sidePanel" aria-label="Task tools and history">
-          <div className="mobileSheetHandle" aria-hidden="true" />
-          <div className="segmentedTabs" role="tablist" aria-label={t("session.sideViews")}>
+          <aside
+            className={`sidePanel ${sidePanelDrag ? "isDragging" : ""}`}
+            aria-label="Task tools and history"
+            style={{ "--sheet-drag-y": `${sidePanelDragOffset}px` } as CSSProperties}
+          >
             <button
-              className="miniCollapseButton"
+              className="mobileSheetHandleButton"
               type="button"
-              onClick={() => setSidePanelCollapsed(true)}
+              onClick={collapseSidePanel}
+              onPointerDown={startSidePanelDrag}
+              onPointerMove={moveSidePanelDrag}
+              onPointerUp={finishSidePanelDrag}
+              onPointerCancel={cancelSidePanelDrag}
               aria-label={t("session.collapseTools")}
-              aria-expanded={!sidePanelCollapsed}
               title={t("session.collapseTools")}
             >
-              <PanelRightClose size={14} />
+              <span className="mobileSheetHandle" aria-hidden="true" />
             </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeSideTab === "context"}
-              className={activeSideTab === "context" ? "isSelected" : ""}
-              onClick={() => setActiveSideTab("context")}
-              title={t("session.context")}
-            >
-              {t("session.context")}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeSideTab === "agents"}
-              className={activeSideTab === "agents" ? "isSelected" : ""}
-              onClick={() => setActiveSideTab("agents")}
-              title={t("session.agents")}
-            >
-              {t("session.agents")}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeSideTab === "runs"}
-              className={activeSideTab === "runs" ? "isSelected" : ""}
-              onClick={() => setActiveSideTab("runs")}
-              title={t("session.turns")}
-            >
-              {t("session.turns")}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeSideTab === "prompt"}
-              className={activeSideTab === "prompt" ? "isSelected" : ""}
-              onClick={() => setActiveSideTab("prompt")}
-              title={t("session.prompt")}
-            >
-              {t("session.prompt")}
-            </button>
-          </div>
+            <div className="segmentedTabs" role="tablist" aria-label={t("session.sideViews")}>
+              <button
+                className="miniCollapseButton"
+                type="button"
+                onClick={() => setSidePanelCollapsed(true)}
+                aria-label={t("session.collapseTools")}
+                aria-expanded={!sidePanelCollapsed}
+                title={t("session.collapseTools")}
+              >
+                <PanelRightClose size={14} />
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeSideTab === "context"}
+                className={activeSideTab === "context" ? "isSelected" : ""}
+                onClick={() => setActiveSideTab("context")}
+                title={t("session.context")}
+              >
+                {t("session.context")}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeSideTab === "agents"}
+                className={activeSideTab === "agents" ? "isSelected" : ""}
+                onClick={() => setActiveSideTab("agents")}
+                title={t("session.agents")}
+              >
+                {t("session.agents")}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeSideTab === "runs"}
+                className={activeSideTab === "runs" ? "isSelected" : ""}
+                onClick={() => setActiveSideTab("runs")}
+                title={t("session.turns")}
+              >
+                {t("session.turns")}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeSideTab === "prompt"}
+                className={activeSideTab === "prompt" ? "isSelected" : ""}
+                onClick={() => setActiveSideTab("prompt")}
+                title={t("session.prompt")}
+              >
+                {t("session.prompt")}
+              </button>
+            </div>
 
-          <div className="sidePanelContent">
-            {activeSideTab === "context" ? (
-              <ContextPanel
-                server={props.server}
-                project={props.project}
-                task={props.task}
-                contextItems={props.contextItems}
-                state={props.contextState}
-                selectedIds={selectedContextIds}
-                onSelectionChange={setSelectedContextIds}
-                onCreateContext={props.onCreateContext}
-                onUpdateContext={props.onUpdateContext}
-                onDeleteContext={props.onDeleteContext}
-                creating={props.creatingContext}
-                updating={props.updatingContext}
-                deleting={props.deletingContext}
-                summaryPanel={summaryPanel}
-              />
-            ) : null}
+            <div className="sidePanelContent">
+              {activeSideTab === "context" ? (
+                <ContextPanel
+                  server={props.server}
+                  project={props.project}
+                  task={props.task}
+                  contextItems={props.contextItems}
+                  state={props.contextState}
+                  selectedIds={selectedContextIds}
+                  onSelectionChange={setSelectedContextIds}
+                  onCreateContext={props.onCreateContext}
+                  onUpdateContext={props.onUpdateContext}
+                  onDeleteContext={props.onDeleteContext}
+                  creating={props.creatingContext}
+                  updating={props.updatingContext}
+                  deleting={props.deletingContext}
+                  summaryPanel={summaryPanel}
+                />
+              ) : null}
 
-            {activeSideTab === "agents" ? <AgentsFilePanel server={props.server} project={props.project} /> : null}
+              {activeSideTab === "agents" ? <AgentsFilePanel server={props.server} project={props.project} /> : null}
 
-            {activeSideTab === "runs" ? (
-              <RunHistory
-                runs={props.runs}
-                selectedRunId={props.selectedRunId}
-                onSelectRun={(runId) => {
-                  props.onSelectRun(runId);
-                  setActiveWorkbenchTab("output");
-                }}
-                state={props.runsState}
-                activeRun={props.activeRun}
-                onCancelRun={props.onCancelRun}
-                cancelingRun={props.cancelingRun}
-              />
-            ) : null}
+              {activeSideTab === "runs" ? (
+                <RunHistory
+                  runs={props.runs}
+                  selectedRunId={props.selectedRunId}
+                  onSelectRun={(runId) => {
+                    props.onSelectRun(runId);
+                    setActiveWorkbenchTab("output");
+                  }}
+                  state={props.runsState}
+                  activeRun={props.activeRun}
+                  onCancelRun={props.onCancelRun}
+                  cancelingRun={props.cancelingRun}
+                />
+              ) : null}
 
-            {activeSideTab === "prompt" ? (
-              <PromptPanel run={props.selectedRun} draftPrompt={draftPrompt} draftActive={draftPromptActive} />
-            ) : null}
-          </div>
-
-        </aside>
+              {activeSideTab === "prompt" ? (
+                <PromptPanel run={props.selectedRun} draftPrompt={draftPrompt} draftActive={draftPromptActive} />
+              ) : null}
+            </div>
+          </aside>
         )}
       </div>
     </section>

@@ -41,7 +41,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
 import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunMode, CreateServerRequest, EmailNotificationConfigRequest, ListResponse, MarkDoneRequest, Project, Run, RunnerUpdateProgress, RunnerUpdateProgressResult, Server, Task, WorkbenchNotification } from "../../types";
-import { isActiveRunStatus } from "../../utils";
+import { isActiveRunStatus, isTerminalRunStatus } from "../../utils";
 import {
   activeTaskStatuses,
   navPanelDefaultWidth,
@@ -289,6 +289,52 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
     }, 2_500);
     return () => window.clearInterval(timer);
   }, [activeRun, queryClient, selectedProjectId, selectedTask?.status, selectedTaskId]);
+
+  useEffect(() => {
+    if (!selectedTaskId || !selectedTask) {
+      return;
+    }
+    let terminalTaskRun: Run | null = null;
+    if (selectedTask.active_run_id) {
+      terminalTaskRun = runs.find((run) => run.id === selectedTask.active_run_id && isTerminalRunStatus(run.status)) ?? null;
+    } else if (selectedTask.status === "running" && !activeRun && latestRun && isTerminalRunStatus(latestRun.status)) {
+      terminalTaskRun = latestRun;
+    }
+    if (!terminalTaskRun) {
+      return;
+    }
+    queryClient.setQueryData<Task>(["task", selectedTaskId], (current) => {
+      if (!current || current.id !== selectedTaskId || (current.active_run_id && current.active_run_id !== terminalTaskRun.id)) {
+        return current;
+      }
+      return {
+        ...current,
+        status: current.status === "running" ? "waiting_user" : current.status,
+        active_run_id: current.active_run_id === terminalTaskRun.id ? null : current.active_run_id,
+      };
+    });
+    if (selectedProjectId) {
+      queryClient.setQueryData<ListResponse<Task>>(["tasks", selectedProjectId], (current) => {
+        if (!current) {
+          return current;
+        }
+        let changed = false;
+        const items = current.items.map((task) => {
+          if (task.id !== selectedTaskId || (task.active_run_id && task.active_run_id !== terminalTaskRun.id)) {
+            return task;
+          }
+          const status = task.status === "running" ? "waiting_user" : task.status;
+          const activeRunId = task.active_run_id === terminalTaskRun.id ? null : task.active_run_id;
+          if (status === task.status && activeRunId === task.active_run_id) {
+            return task;
+          }
+          changed = true;
+          return { ...task, status, active_run_id: activeRunId };
+        });
+        return changed ? { ...current, items } : current;
+      });
+    }
+  }, [activeRun, latestRun, queryClient, runs, selectedProjectId, selectedTask, selectedTaskId]);
 
   const contextQuery = useQuery({
     queryKey: ["context-items", selectedProjectId, selectedTaskId],

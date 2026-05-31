@@ -27,6 +27,10 @@ export function isActiveRunStatus(status: RunStatus) {
   return status === "queued" || status === "running";
 }
 
+export function isTerminalRunStatus(status: RunStatus) {
+  return status === "succeeded" || status === "failed" || status === "canceled";
+}
+
 export function isActiveTaskStatus(status: TaskStatus) {
   return status === "running";
 }

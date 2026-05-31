@@ -3385,6 +3385,10 @@ textarea:disabled {
 
 @media (max-width: 920px) {
   .appShell {
+    height: 100vh;
+    min-height: 100vh;
+    height: 100dvh;
+    min-height: 100dvh;
     grid-template-rows: auto auto minmax(0, 1fr);
     overflow: hidden;
   }
@@ -3446,9 +3450,10 @@ textarea:disabled {
   .workbenchGrid.taskCollapsed,
   .workbenchGrid.navCollapsed.taskCollapsed {
     height: 100%;
+    min-height: 0;
+    align-self: stretch;
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1fr);
-    min-height: 0;
     overflow: hidden;
   }
 
@@ -3500,6 +3505,8 @@ textarea:disabled {
   .sessionPanel {
     height: 100%;
     min-height: 0;
+    max-height: 100%;
+    align-self: stretch;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     overflow: hidden;
@@ -3515,6 +3522,7 @@ textarea:disabled {
 
   .workbenchBody {
     height: 100%;
+    max-height: 100%;
     min-height: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -3533,6 +3541,8 @@ textarea:disabled {
   .primaryWorkspace {
     height: 100%;
     min-height: 0;
+    max-height: 100%;
+    align-self: stretch;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) 0 52px;
     overflow: hidden;
@@ -3642,6 +3652,7 @@ textarea:disabled {
   .workspaceContent,
   .outputWorkspace,
   .filesPanel {
+    height: 100%;
     min-height: 0;
     overflow: hidden;
   }

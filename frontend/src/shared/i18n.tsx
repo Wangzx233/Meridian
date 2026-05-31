@@ -57,6 +57,11 @@ const translations: Record<Language, Record<string, string>> = {
     "app.markDoneFailed": "Unable to mark task done.",
     "app.notificationUpdateFailed": "Unable to update notification.",
 
+    "mobile.switchWorkspace": "Switch workspace",
+    "mobile.switchWorkspaceBody": "Choose a server, project, or task.",
+    "mobile.close": "Close",
+    "mobile.noTask": "No task selected",
+
     "status.online": "Online",
     "status.offline": "Offline",
     "status.open": "Open",
@@ -137,6 +142,10 @@ const translations: Record<Language, Record<string, string>> = {
     "composer.targetHint": "Project workdir is shown above.",
     "composer.send": "Send run",
     "composer.interrupt": "Interrupt & send",
+    "composer.voice": "Voice",
+    "composer.voiceTitle": "Dictate into the instruction box",
+    "composer.voiceFallbackTitle": "Speech recognition is unavailable. Focus the box and use the system keyboard microphone.",
+    "composer.voiceListening": "Listening",
 
     "context.aria": "Manual context picker",
     "context.pickTab": "Pick context",
@@ -353,6 +362,11 @@ const translations: Record<Language, Record<string, string>> = {
     "app.markDoneFailed": "无法标记完成。",
     "app.notificationUpdateFailed": "无法更新通知。",
 
+    "mobile.switchWorkspace": "切换工作区",
+    "mobile.switchWorkspaceBody": "选择设备、项目或任务。",
+    "mobile.close": "关闭",
+    "mobile.noTask": "未选择任务",
+
     "status.online": "在线",
     "status.offline": "离线",
     "status.open": "开放",
@@ -433,6 +447,10 @@ const translations: Record<Language, Record<string, string>> = {
     "composer.targetHint": "项目目录显示在上方。",
     "composer.send": "发送运行",
     "composer.interrupt": "中断并发送",
+    "composer.voice": "语音",
+    "composer.voiceTitle": "将语音转写到指令输入框",
+    "composer.voiceFallbackTitle": "当前浏览器不支持应用内语音识别，请聚焦输入框后使用系统键盘麦克风。",
+    "composer.voiceListening": "识别中",
 
     "context.aria": "手动上下文选择",
     "context.pickTab": "勾选上下文",

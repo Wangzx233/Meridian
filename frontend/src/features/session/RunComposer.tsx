@@ -31,10 +31,12 @@ import {
   Terminal,
   TerminalSquare,
   Trash2,
+  Mic,
   Reply,
   X,
   Zap,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { CodexReasoningEffort, CodexServiceTier, CreateRunMode, Run, Task } from "../../types";
 import { modelOptions, reasoningEffortOptions } from "../../shared/constants";
@@ -79,6 +81,65 @@ export function RunComposer(props: {
   const hasObservedSession = Boolean(props.task.codex_session_id || props.runs.some((run) => run.codex_session_id));
   const showMissingSessionHint = props.mode === "resume" && !hasObservedSession;
   const messageReady = Boolean(props.message.trim()) && !showMissingSessionHint;
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const messageRef = useRef(props.message);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const [listening, setListening] = useState(false);
+  const speechSupported = typeof window !== "undefined" && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  useEffect(() => {
+    messageRef.current = props.message;
+  }, [props.message]);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+      recognitionRef.current = null;
+    };
+  }, []);
+
+  const focusInput = () => {
+    inputRef.current?.focus();
+  };
+
+  const toggleSpeech = () => {
+    if (!speechSupported) {
+      focusInput();
+      return;
+    }
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+      return;
+    }
+    const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!Recognition) {
+      focusInput();
+      return;
+    }
+    const recognition = new Recognition();
+    recognition.lang = navigator.language || "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        transcript += event.results[index][0]?.transcript ?? "";
+      }
+      const text = transcript.trim();
+      if (!text) {
+        return;
+      }
+      const nextMessage = appendSpeechText(messageRef.current, text);
+      messageRef.current = nextMessage;
+      props.onMessageChange(nextMessage);
+    };
+    recognition.onerror = () => setListening(false);
+    recognition.onend = () => setListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setListening(true);
+  };
 
   return (
     <form className="composer" onSubmit={props.onSubmit}>
@@ -175,6 +236,7 @@ export function RunComposer(props: {
         </div>
       </div>
       <textarea
+        ref={inputRef}
         id="run-message"
         className="instructionInput"
         value={props.message}
@@ -187,6 +249,17 @@ export function RunComposer(props: {
       {showMissingSessionHint ? <InlineNotice tone="danger">{t("composer.noSession")}</InlineNotice> : null}
       <div className="composerActions">
         <span className="targetHint">{t("composer.targetHint")}</span>
+        <button
+          className={`voiceButton ${listening ? "isListening" : ""}`}
+          type="button"
+          onClick={toggleSpeech}
+          disabled={(props.disabled && !props.canInterrupt) || props.submitting || props.interrupting}
+          aria-pressed={listening}
+          title={speechSupported ? t("composer.voiceTitle") : t("composer.voiceFallbackTitle")}
+        >
+          <Mic size={16} />
+          {listening ? t("composer.voiceListening") : t("composer.voice")}
+        </button>
         <button
           className="primaryButton"
           type="submit"
@@ -219,4 +292,10 @@ export function RunComposer(props: {
       </div>
     </form>
   );
+}
+
+function appendSpeechText(current: string, transcript: string) {
+  const trimmedCurrent = current.trimEnd();
+  const separator = trimmedCurrent ? " " : "";
+  return `${trimmedCurrent}${separator}${transcript}`;
 }

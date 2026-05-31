@@ -159,7 +159,9 @@ export function TaskSessionPanel(props: {
   const taskPageKey = props.task?.id ? `ctw.taskPage.${props.task.id}` : null;
   const [storedWorkbenchTab, setStoredWorkbenchTab] = useStoredString(taskPageKey ? `${taskPageKey}.workspace` : null, "output");
   const [storedSideTab, setStoredSideTab] = useStoredString(taskPageKey ? `${taskPageKey}.side` : null, "context");
+  const [mobileLayout, setMobileLayout] = useState(() => isMobileWorkbenchLayout());
   const activeWorkbenchTab = validWorkbenchTab(storedWorkbenchTab);
+  const visibleWorkspaceTab = mobileLayout && activeWorkbenchTab === "terminal" ? "output" : activeWorkbenchTab;
   const activeSideTab = validSidePanelTab(storedSideTab);
   const [visitedWorkbenchTabs, setVisitedWorkbenchTabs] = useState<WorkbenchTab[]>(() => [activeWorkbenchTab]);
   const projectId = props.project?.id ?? null;
@@ -217,6 +219,14 @@ export function TaskSessionPanel(props: {
       // Local storage can be unavailable in private or restricted browser modes.
     }
   };
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 920px)");
+    const update = () => setMobileLayout(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     setSelectedContextIds([]);
@@ -279,8 +289,8 @@ export function TaskSessionPanel(props: {
     ? buildDraftPromptPreview(props.task, mode, hasObservedSession, message, selectedContextItems, reminderCallbacksOn)
     : "";
   const draftPromptActive = Boolean(props.task && (message.trim() || selectedContextIds.length > 0 || reminderCallbacksOn));
-  const activeWorkspaceTab = activeWorkbenchTab;
-  const mountedWorkspaceTabs = visitedWorkbenchTabs;
+  const activeWorkspaceTab = visibleWorkspaceTab;
+  const mountedWorkspaceTabs = Array.from(new Set<WorkbenchTab>(["output", activeWorkspaceTab, ...visitedWorkbenchTabs]));
 
   const selectWorkbenchTab = (tab: WorkbenchTab) => {
     setActiveWorkbenchTab(tab);
@@ -681,7 +691,7 @@ export function TaskSessionPanel(props: {
       </div>
 
       <div
-        className={`workbenchBody ${sidePanelCollapsed ? "sidePanelCollapsed" : ""}`}
+        className={`workbenchBody ${sidePanelCollapsed ? "sidePanelCollapsed" : ""} ${composerCollapsed ? "composerCollapsedMobile" : ""}`}
         style={
           {
             "--side-panel-width": `${sidePanelWidth}px`,
@@ -697,34 +707,34 @@ export function TaskSessionPanel(props: {
                 role="tab"
                 aria-selected={activeWorkspaceTab === "output"}
                 className={activeWorkspaceTab === "output" ? "isSelected" : ""}
-              onClick={() => selectWorkbenchTab("output")}
-              title={t("session.output")}
-            >
-              <TerminalSquare size={15} />
+                onClick={() => selectWorkbenchTab("output")}
+                title={t("session.output")}
+              >
+                <TerminalSquare size={15} />
                 {t("session.output")}
-            </button>
+              </button>
               <button
+                className={`desktopOnlyTab ${activeWorkbenchTab === "terminal" ? "isSelected" : ""}`}
                 type="button"
                 role="tab"
-                aria-selected={activeWorkspaceTab === "terminal"}
-                className={activeWorkspaceTab === "terminal" ? "isSelected" : ""}
-              onClick={() => selectWorkbenchTab("terminal")}
-              title={t("session.terminal")}
-            >
-              <Terminal size={15} />
+                aria-selected={activeWorkbenchTab === "terminal"}
+                onClick={() => setStoredWorkbenchTab("terminal")}
+                title={t("session.terminal")}
+              >
+                <Terminal size={15} />
                 {t("session.terminal")}
-            </button>
+              </button>
               <button
                 type="button"
                 role="tab"
                 aria-selected={activeWorkspaceTab === "files"}
                 className={activeWorkspaceTab === "files" ? "isSelected" : ""}
-              onClick={() => selectWorkbenchTab("files")}
-              title={t("session.files")}
-            >
-              <FolderOpen size={15} />
+                onClick={() => selectWorkbenchTab("files")}
+                title={t("session.files")}
+              >
+                <FolderOpen size={15} />
                 {t("session.files")}
-            </button>
+              </button>
             </div>
             <button
               className="miniCollapseButton"
@@ -757,7 +767,7 @@ export function TaskSessionPanel(props: {
             ) : null}
 
             {mountedWorkspaceTabs.includes("terminal") ? (
-              <div className="workspacePane" hidden={activeWorkspaceTab !== "terminal"}>
+              <div className="workspacePane desktopTerminalPane" hidden={activeWorkspaceTab !== "terminal"}>
                 <TerminalPanel server={props.server} project={props.project} visible={activeWorkspaceTab === "terminal"} />
               </div>
             ) : null}
@@ -872,6 +882,7 @@ export function TaskSessionPanel(props: {
           </aside>
         ) : (
         <aside className="sidePanel" aria-label="Task tools and history">
+          <div className="mobileSheetHandle" aria-hidden="true" />
           <div className="segmentedTabs" role="tablist" aria-label={t("session.sideViews")}>
             <button
               className="miniCollapseButton"
@@ -1000,6 +1011,10 @@ function trimTaskMemoryDraft(memory: TaskMemoryDraft): TaskMemoryDraft {
 
 function validWorkbenchTab(value: string): WorkbenchTab {
   return value === "terminal" || value === "files" ? value : "output";
+}
+
+function isMobileWorkbenchLayout() {
+  return typeof window !== "undefined" && window.matchMedia("(max-width: 920px)").matches;
 }
 
 function validSidePanelTab(value: string): SidePanelTab {

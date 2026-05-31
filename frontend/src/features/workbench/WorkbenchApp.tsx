@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
+  ChevronUp,
   Circle,
   ClipboardList,
   Copy,
@@ -36,10 +37,10 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
-import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunMode, CreateServerRequest, EmailNotificationConfigRequest, ListResponse, MarkDoneRequest, Project, Run, RunnerUpdateProgress, RunnerUpdateProgressResult, Task, WorkbenchNotification } from "../../types";
+import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunMode, CreateServerRequest, EmailNotificationConfigRequest, ListResponse, MarkDoneRequest, Project, Run, RunnerUpdateProgress, RunnerUpdateProgressResult, Server, Task, WorkbenchNotification } from "../../types";
 import { isActiveRunStatus } from "../../utils";
 import {
   activeTaskStatuses,
@@ -56,8 +57,9 @@ import { queryState } from "../../shared/loadState";
 import { errorNotice, runnerUpdateNotice } from "../../shared/notices";
 import type { Notice } from "../../shared/notices";
 import { useI18n } from "../../shared/i18n";
+import { serverDisplayName } from "../../shared/serverDisplay";
 import { useStoredPanelSize } from "../../shared/storage";
-import { EmptyState, ResizeHandle, Toast } from "../../shared/ui";
+import { EmptyState, LoadBoundary, ResizeHandle, StatusBadge, Toast } from "../../shared/ui";
 import { notificationMessage, NotificationPopover } from "../notifications/NotificationPopover";
 import { NavPanel } from "../navigation/NavPanel";
 import { RunnerInstallPopover } from "../runner/RunnerInstallPopover";
@@ -117,6 +119,8 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [runnerUpdateProgressOpen, setRunnerUpdateProgressOpen] = useState(false);
+  const [mobilePickerOpen, setMobilePickerOpen] = useState(false);
+  const [mobilePickerSection, setMobilePickerSection] = useState<"servers" | "projects" | "tasks">("tasks");
   const [browserNotificationPermission, setBrowserNotificationPermission] = useState<NotificationPermission>(
     getBrowserNotificationPermission(),
   );
@@ -785,6 +789,22 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
         </Toast>
       ) : null}
 
+      <button
+        className="mobileWorkspaceSwitch"
+        type="button"
+        onClick={() => setMobilePickerOpen(true)}
+        aria-haspopup="dialog"
+        aria-expanded={mobilePickerOpen}
+      >
+        <span>
+          <strong>{selectedTask?.title ?? t("mobile.noTask")}</strong>
+          <small>
+            {serverDisplayName(selectedServer) || t("session.unknownServer")} / {selectedProject?.name ?? t("tasks.noProject")}
+          </small>
+        </span>
+        <ChevronDown size={18} />
+      </button>
+
       <main
         id="main-workbench"
         className={`workbenchGrid ${navCollapsed ? "navCollapsed" : ""} ${taskCollapsed ? "taskCollapsed" : ""}`}
@@ -911,7 +931,200 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
           onClose={() => setRunnerUpdateProgressOpen(false)}
         />
       ) : null}
+      {mobilePickerOpen ? (
+        <MobileWorkspacePicker
+          servers={servers}
+          projects={projects}
+          tasks={tasks}
+          selectedServerId={selectedServerId}
+          selectedProjectId={selectedProjectId}
+          selectedTaskId={selectedTaskId}
+          serversState={queryState(serversQuery)}
+          projectsState={queryState(projectsQuery)}
+          tasksState={queryState(tasksQuery)}
+          activeSection={mobilePickerSection}
+          onActiveSectionChange={setMobilePickerSection}
+          onSelectServer={(serverId) => {
+            const restoredLocation = readStoredServerLocation(serverId);
+            setSelectedServerId(serverId);
+            setSelectedProjectId(restoredLocation.projectId);
+            setSelectedTaskId(restoredLocation.taskId);
+            setSelectedRunId(restoredLocation.runId);
+            setServerRestoredAt(serverId);
+            setMobilePickerSection("projects");
+          }}
+          onSelectProject={(projectId) => {
+            setSelectedProjectId(projectId);
+            setSelectedTaskId(null);
+            setSelectedRunId(null);
+            setMobilePickerSection("tasks");
+          }}
+          onSelectTask={(taskId) => {
+            setSelectedTaskId(taskId);
+            setSelectedRunId(null);
+            setMobilePickerOpen(false);
+          }}
+          onClose={() => setMobilePickerOpen(false)}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function MobileWorkspacePicker(props: {
+  servers: Server[];
+  projects: Project[];
+  tasks: Task[];
+  selectedServerId: string | null;
+  selectedProjectId: string | null;
+  selectedTaskId: string | null;
+  serversState: ReturnType<typeof queryState>;
+  projectsState: ReturnType<typeof queryState>;
+  tasksState: ReturnType<typeof queryState>;
+  activeSection: "servers" | "projects" | "tasks";
+  onActiveSectionChange: (section: "servers" | "projects" | "tasks") => void;
+  onSelectServer: (serverId: string) => void;
+  onSelectProject: (projectId: string) => void;
+  onSelectTask: (taskId: string) => void;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="mobileSheetScrim" role="presentation" onMouseDown={props.onClose}>
+      <section
+        className="mobileWorkspaceSheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mobile-workspace-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="mobileSheetHandle" aria-hidden="true" />
+        <div className="dialogHeader">
+          <div>
+            <h2 id="mobile-workspace-title">{t("mobile.switchWorkspace")}</h2>
+            <p>{t("mobile.switchWorkspaceBody")}</p>
+          </div>
+          <button className="iconButton" type="button" onClick={props.onClose} aria-label={t("mobile.close")}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="mobileAccordion">
+          <MobilePickerSection
+            title={t("nav.servers")}
+            detail={selectedServerLabel(props.servers, props.selectedServerId, t("session.unknownServer"))}
+            open={props.activeSection === "servers"}
+            onToggle={() => props.onActiveSectionChange(props.activeSection === "servers" ? "tasks" : "servers")}
+          >
+            <LoadBoundary
+              state={props.serversState}
+              empty={props.servers.length === 0}
+              emptyTitle={t("nav.noServers")}
+              emptyBody={t("nav.noServersBody")}
+            >
+              <div className="mobilePickerList">
+                {props.servers.map((server) => (
+                  <button
+                    key={server.id}
+                    className={`mobilePickerRow ${props.selectedServerId === server.id ? "isSelected" : ""}`}
+                    type="button"
+                    onClick={() => props.onSelectServer(server.id)}
+                  >
+                    <span>
+                      <strong>{serverDisplayName(server)}</strong>
+                      <small>{server.runner_id}</small>
+                    </span>
+                    <StatusBadge status={server.status} />
+                  </button>
+                ))}
+              </div>
+            </LoadBoundary>
+          </MobilePickerSection>
+
+          <MobilePickerSection
+            title={t("nav.projects")}
+            detail={selectedProjectLabel(props.projects, props.selectedProjectId, t("tasks.noProject"))}
+            open={props.activeSection === "projects"}
+            onToggle={() => props.onActiveSectionChange(props.activeSection === "projects" ? "tasks" : "projects")}
+          >
+            <LoadBoundary
+              state={props.projectsState}
+              empty={props.projects.length === 0}
+              emptyTitle={t("nav.noProjects")}
+              emptyBody={props.selectedServerId ? t("nav.noProjectsBody") : t("nav.selectServerBody")}
+            >
+              <div className="mobilePickerList">
+                {props.projects.map((project) => (
+                  <button
+                    key={project.id}
+                    className={`mobilePickerRow ${props.selectedProjectId === project.id ? "isSelected" : ""}`}
+                    type="button"
+                    onClick={() => props.onSelectProject(project.id)}
+                  >
+                    <span>
+                      <strong>{project.name}</strong>
+                      <small className="mono">{project.workdir}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </LoadBoundary>
+          </MobilePickerSection>
+
+          <MobilePickerSection
+            title={t("tasks.title")}
+            detail={selectedTaskLabel(props.tasks, props.selectedTaskId, t("mobile.noTask"))}
+            open={props.activeSection === "tasks"}
+            onToggle={() => props.onActiveSectionChange(props.activeSection === "tasks" ? "projects" : "tasks")}
+          >
+            <LoadBoundary
+              state={props.tasksState}
+              empty={props.tasks.length === 0}
+              emptyTitle={props.selectedProjectId ? t("tasks.noActive") : t("tasks.noProject")}
+              emptyBody={props.selectedProjectId ? t("tasks.noActiveBody") : t("tasks.noProjectBody")}
+            >
+              <div className="mobilePickerList">
+                {props.tasks.map((task) => (
+                  <button
+                    key={task.id}
+                    className={`mobilePickerRow ${props.selectedTaskId === task.id ? "isSelected" : ""}`}
+                    type="button"
+                    onClick={() => props.onSelectTask(task.id)}
+                  >
+                    <span>
+                      <strong>{task.title}</strong>
+                      <small>{task.description || t("tasks.noDescription")}</small>
+                    </span>
+                    <StatusBadge status={task.status} />
+                  </button>
+                ))}
+              </div>
+            </LoadBoundary>
+          </MobilePickerSection>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MobilePickerSection(props: {
+  title: string;
+  detail: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className={`mobilePickerSection ${props.open ? "isOpen" : ""}`}>
+      <button type="button" onClick={props.onToggle} aria-expanded={props.open}>
+        <span>
+          <strong>{props.title}</strong>
+          <small>{props.detail}</small>
+        </span>
+        {props.open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+      {props.open ? <div className="mobilePickerSectionBody">{props.children}</div> : null}
+    </section>
   );
 }
 
@@ -1054,6 +1267,19 @@ function shortVersion(value: string | null | undefined) {
     return "unknown";
   }
   return value.length > 12 ? value.slice(0, 12) : value;
+}
+
+function selectedServerLabel(servers: Server[], selectedServerId: string | null, fallback: string) {
+  const server = servers.find((item) => item.id === selectedServerId);
+  return serverDisplayName(server) || fallback;
+}
+
+function selectedProjectLabel(projects: Project[], selectedProjectId: string | null, fallback: string) {
+  return projects.find((project) => project.id === selectedProjectId)?.name ?? fallback;
+}
+
+function selectedTaskLabel(tasks: Task[], selectedTaskId: string | null, fallback: string) {
+  return tasks.find((task) => task.id === selectedTaskId)?.title ?? fallback;
 }
 
 function getBrowserNotificationPermission(): NotificationPermission {

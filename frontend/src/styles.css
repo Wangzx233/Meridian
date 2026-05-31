@@ -3296,6 +3296,38 @@ textarea:disabled {
   color: var(--text-muted);
 }
 
+.mobileWorkspaceSwitch,
+.mobileSheetScrim,
+.mobileWorkspaceSheet,
+.mobilePickerSection,
+.mobilePickerList,
+.mobilePickerRow,
+.mobileSheetHandle {
+  display: none;
+}
+
+.voiceButton {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.voiceButton:hover:not(:disabled),
+.voiceButton.isListening {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
 .spin {
   animation: spin 900ms linear infinite;
 }
@@ -3352,7 +3384,8 @@ textarea:disabled {
 
 @media (max-width: 920px) {
   .appShell {
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    overflow: hidden;
   }
 
   .topBar {
@@ -3369,15 +3402,60 @@ textarea:disabled {
     right: 0;
   }
 
+  .mobileWorkspaceSwitch {
+    min-height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px max(12px, env(safe-area-inset-right)) 7px max(12px, env(safe-area-inset-left));
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    text-align: left;
+  }
+
+  .mobileWorkspaceSwitch span {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .mobileWorkspaceSwitch strong,
+  .mobileWorkspaceSwitch small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobileWorkspaceSwitch strong {
+    font-size: 14px;
+    line-height: 1.25;
+  }
+
+  .mobileWorkspaceSwitch small {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
   .workbenchGrid,
   .workbenchGrid.navCollapsed,
   .workbenchGrid.taskCollapsed,
   .workbenchGrid.navCollapsed.taskCollapsed {
     grid-template-columns: 1fr;
-    overflow-y: auto;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .resizeHandle {
+    display: none;
+  }
+
+  .workbenchGrid > .navPanel,
+  .workbenchGrid > .taskPanel,
+  .workbenchGrid > .resizeHandle {
     display: none;
   }
 
@@ -3417,23 +3495,80 @@ textarea:disabled {
   }
 
   .sessionPanel {
-    display: block;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .sessionHeader {
+    padding: 8px 12px;
+  }
+
+  .sessionFacts {
+    display: none;
   }
 
   .workbenchBody {
-    display: block;
-    overflow: visible;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) 52px;
+    overflow: hidden;
   }
 
-  .primaryWorkspace,
-  .sidePanel {
-    display: block;
-    overflow: visible;
+  .workbenchBody:not(.composerCollapsedMobile) {
+    grid-template-rows: minmax(0, 1fr) minmax(230px, 38dvh);
+  }
+
+  .primaryWorkspace {
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) 0 52px;
+    overflow: hidden;
+  }
+
+  .primaryWorkspace:not(.composerCollapsed) {
+    grid-template-rows: auto minmax(0, 1fr) 0 100%;
   }
 
   .sidePanel {
+    position: fixed;
+    z-index: 30;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    max-height: min(82dvh, 720px);
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    overflow: hidden;
     border-left: 0;
     border-top: 1px solid var(--border);
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -18px 42px rgb(23 32 26 / 18%);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .sideRail {
+    position: fixed;
+    z-index: 12;
+    right: max(10px, env(safe-area-inset-right));
+    bottom: calc(60px + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: row;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+
+  .mobileSheetHandle {
+    width: 44px;
+    height: 4px;
+    display: block;
+    justify-self: center;
+    margin-top: 8px;
+    border-radius: 999px;
+    background: var(--border-strong);
   }
 
   .workbenchBody > .resizeHandle,
@@ -3449,16 +3584,16 @@ textarea:disabled {
   .runDetailPanel,
   .promptPanel,
   .conversationViewport,
-  .terminalViewport,
   .projectFileList {
-    overflow: visible;
+    overflow: auto;
   }
 
   .composer {
-    height: auto;
-    position: sticky;
-    bottom: 0;
-    z-index: 5;
+    height: 100%;
+    min-height: 0;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
   }
 
   .memorySummaryBox,
@@ -3468,15 +3603,122 @@ textarea:disabled {
 
   .workspaceContent,
   .outputWorkspace,
-  .terminalPanel,
   .filesPanel {
-    overflow: visible;
+    min-height: 0;
+    overflow: hidden;
   }
 
-  .conversationViewport,
-  .terminalViewport,
-  .projectFileList {
-    max-height: none;
+  .conversationViewport {
+    min-height: 0;
+    height: 100%;
+  }
+
+  .terminalPanel,
+  .desktopTerminalPane,
+  .desktopOnlyTab {
+    display: none !important;
+  }
+
+  .mobileSheetScrim {
+    position: fixed;
+    z-index: 45;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    background: rgb(23 32 26 / 32%);
+  }
+
+  .mobileWorkspaceSheet {
+    width: 100%;
+    max-height: min(86dvh, 760px);
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    padding-bottom: env(safe-area-inset-bottom);
+    border-radius: 14px 14px 0 0;
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    background: var(--surface);
+    box-shadow: 0 -18px 42px rgb(23 32 26 / 22%);
+  }
+
+  .mobileAccordion {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 12px 12px;
+    overflow-y: auto;
+  }
+
+  .mobilePickerSection {
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-raised);
+    overflow: hidden;
+  }
+
+  .mobilePickerSection > button {
+    width: 100%;
+    min-height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+  }
+
+  .mobilePickerSection > button span,
+  .mobilePickerRow > span {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .mobilePickerSection small,
+  .mobilePickerRow small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .mobilePickerSectionBody {
+    border-top: 1px solid var(--border);
+    padding: 8px;
+  }
+
+  .mobilePickerList {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .mobilePickerRow {
+    width: 100%;
+    min-height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+  }
+
+  .mobilePickerRow.isSelected {
+    border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+    background: var(--primary-soft);
   }
 }
 
@@ -3584,6 +3826,33 @@ textarea:disabled {
     overflow-x: auto;
   }
 
+  .workspaceTabs button,
+  .segmentedTabs button,
+  .composerCollapsedBar,
+  .voiceButton,
+  .iconButton,
+  .primaryButton,
+  .ghostButton,
+  .optionToggle,
+  .interruptButton,
+  .cancelButton,
+  .doneButton {
+    min-height: 44px;
+  }
+
+  .workspaceTabGroup {
+    flex: 1;
+  }
+
+  .workspaceTabGroup button {
+    flex: 1 0 auto;
+  }
+
+  .segmentedTabs {
+    grid-template-columns: 44px repeat(4, minmax(70px, 1fr));
+    overflow-x: auto;
+  }
+
   .outputToolbar,
   .toolHeader {
     align-items: stretch;
@@ -3631,6 +3900,20 @@ textarea:disabled {
     flex-direction: column;
   }
 
+  .composerToolbar .selectLabel,
+  .composerSwitchGroup {
+    display: none;
+  }
+
+  .instructionInput {
+    min-height: 132px;
+    font-size: 16px;
+  }
+
+  .composerActions {
+    gap: 8px;
+  }
+
   .contextToolbar {
     align-items: stretch;
     flex-direction: column;
@@ -3645,6 +3928,7 @@ textarea:disabled {
   }
 
   .primaryButton,
+  .voiceButton,
   .cancelButton,
   .doneButton {
     width: 100%;

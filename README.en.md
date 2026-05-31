@@ -94,6 +94,20 @@ Do not use `127.0.0.1` for a remote machine unless Meridian runs on that same ma
 7. Continue adding turns until the work is complete.
 8. Mark the task done manually.
 
+## Mobile And PWA Use
+
+Meridian can be used from iOS and Android browsers. On narrow screens, server,
+project, and task switching move into a compact workspace picker, task tools are
+opened as a bottom sheet, and the terminal tab is hidden. The instruction box
+keeps a voice button: browsers with Web Speech support can dictate directly,
+while other browsers can use the system keyboard microphone after focusing the
+input.
+
+The frontend includes a web app manifest and a conservative service worker so
+it can be added to the phone home screen. Use HTTPS for shared or remote mobile
+access; microphone permissions, browser notifications, and install behavior are
+more reliable in a secure context.
+
 ## Other Deployment Paths
 
 Source deployment is available when Docker Compose should not run the whole app stack. The backend applies migrations on startup by default, so a first deployment does not need a separate migration command. The runner is still connected through the installer shown in the top-right menu.

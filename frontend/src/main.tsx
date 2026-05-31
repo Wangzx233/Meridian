@@ -5,6 +5,12 @@ import { App } from "./App";
 import { I18nProvider } from "./shared/i18n";
 import "./styles.css";
 
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js");
+  });
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

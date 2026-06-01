@@ -3547,7 +3547,7 @@ textarea:disabled {
     max-height: 100%;
     align-self: stretch;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     overflow: hidden;
   }
 
@@ -3583,13 +3583,13 @@ textarea:disabled {
     max-height: 100%;
     align-self: stretch;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr) 0 48px;
+    grid-template-rows: auto minmax(0, 1fr) 48px;
     overflow: hidden;
     background: var(--surface);
   }
 
   .primaryWorkspace:not(.composerCollapsed) {
-    grid-template-rows: auto minmax(0, 1fr) 0 clamp(136px, 26dvh, 188px);
+    grid-template-rows: auto minmax(0, 1fr) clamp(136px, 26dvh, 188px);
   }
 
   .sidePanel {
@@ -3692,7 +3692,7 @@ textarea:disabled {
   .workspaceContent,
   .outputWorkspace,
   .filesPanel {
-    height: auto;
+    height: 100%;
     min-height: 0;
     align-self: stretch;
     overflow: hidden;
@@ -3700,8 +3700,12 @@ textarea:disabled {
   }
 
   .workspacePane {
-    height: auto;
+    height: 100%;
     min-height: 0;
+  }
+
+  .workspaceEmpty {
+    height: 100%;
   }
 
   .conversationViewport {
@@ -4087,6 +4091,72 @@ textarea:disabled {
   .voiceButton,
   .cancelButton,
   .doneButton {
+    width: 100%;
+  }
+}
+
+@media (max-width: 920px) {
+  .composer {
+    display: grid;
+    grid-template-rows: minmax(64px, 1fr) auto;
+    align-content: stretch;
+    gap: 8px;
+    overflow: hidden;
+  }
+
+  .composerToolbar {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .composerToolbar .selectLabel,
+  .composerSwitchGroup,
+  .composerActions .targetHint {
+    display: none;
+  }
+
+  .instructionInput {
+    min-height: 0;
+    height: 100%;
+  }
+
+  .composerActions {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    align-items: stretch;
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+
+  .composerActions .voiceButton,
+  .composerActions .doneButton {
+    width: 44px;
+    min-width: 44px;
+    gap: 0;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .composerActions .voiceButton svg,
+  .composerActions .doneButton svg {
+    margin: 0;
+  }
+
+  .composerActions .primaryButton {
+    width: auto;
+    min-width: 0;
+    padding: 0 10px;
+  }
+
+  .composerActions .interruptButton {
+    grid-column: 1 / -1;
     width: 100%;
   }
 }

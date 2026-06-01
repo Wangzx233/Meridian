@@ -3692,10 +3692,16 @@ textarea:disabled {
   .workspaceContent,
   .outputWorkspace,
   .filesPanel {
-    height: 100%;
+    height: auto;
     min-height: 0;
+    align-self: stretch;
     overflow: hidden;
     background: var(--surface);
+  }
+
+  .workspacePane {
+    height: auto;
+    min-height: 0;
   }
 
   .conversationViewport {

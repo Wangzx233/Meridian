@@ -3769,16 +3769,22 @@ textarea:disabled {
     position: fixed;
     z-index: 45;
     inset: 0;
+    min-height: 0;
     display: flex;
     align-items: flex-end;
+    overflow: hidden;
+    overscroll-behavior: contain;
     background: rgb(23 32 26 / 32%);
   }
 
   .mobileWorkspaceSheet {
     width: 100%;
+    height: min(86dvh, 760px);
     max-height: min(86dvh, 760px);
+    min-height: 0;
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
+    overflow: hidden;
     padding-bottom: env(safe-area-inset-bottom);
     border-radius: 14px 14px 0 0;
     border: 1px solid var(--border);
@@ -3788,15 +3794,21 @@ textarea:disabled {
   }
 
   .mobileAccordion {
+    height: 100%;
     min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 8px;
     padding: 0 12px 12px;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
   }
 
   .mobilePickerSection {
+    flex: 0 0 auto;
+    min-height: 0;
     display: block;
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -3837,11 +3849,13 @@ textarea:disabled {
   }
 
   .mobilePickerSectionBody {
+    min-height: 0;
     border-top: 1px solid var(--border);
     padding: 8px;
   }
 
   .mobilePickerList {
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 6px;

@@ -4269,7 +4269,7 @@ textarea:disabled {
 
   .composerActions {
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    grid-template-columns: 44px 44px minmax(96px, 1fr) 44px;
     align-items: stretch;
     gap: 8px;
     flex-wrap: nowrap;
@@ -4290,13 +4290,24 @@ textarea:disabled {
   }
 
   .composerActions .primaryButton {
-    width: auto;
+    grid-column: 3;
+    grid-row: 1;
+    width: 100%;
     min-width: 0;
     padding: 0 10px;
   }
 
   .composerActions .interruptButton {
-    grid-column: 1 / -1;
-    width: 100%;
+    grid-column: 3 / -1;
+    grid-row: 2;
+    justify-self: end;
+    width: auto;
+    max-width: 100%;
+    padding: 0 12px;
+  }
+
+  .composerActions .doneButton {
+    grid-column: 4;
+    grid-row: 1;
   }
 }

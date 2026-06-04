@@ -112,7 +112,7 @@ export function RunOutputWorkspace(props: {
           >
             {props.runs.map((run, index) => (
               <option key={run.id} value={run.id}>
-                Turn {index + 1} · {run.status}
+                {turnOptionLabel(index, run.status)}
               </option>
             ))}
           </select>
@@ -195,6 +195,10 @@ function TranscriptEvent(props: {
       ) : null}
     </article>
   );
+}
+
+function turnOptionLabel(index: number, status: Run["status"]) {
+  return `T${index + 1} · ${status}`;
 }
 
 

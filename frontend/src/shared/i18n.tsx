@@ -61,6 +61,8 @@ const translations: Record<Language, Record<string, string>> = {
     "mobile.switchWorkspaceBody": "Choose a server, project, or task.",
     "mobile.close": "Close",
     "mobile.noTask": "No task selected",
+    "mobile.collapseWorkspaceBar": "Collapse workspace selector",
+    "mobile.expandWorkspaceBar": "Expand workspace selector",
 
     "status.online": "Online",
     "status.offline": "Offline",
@@ -366,6 +368,8 @@ const translations: Record<Language, Record<string, string>> = {
     "mobile.switchWorkspaceBody": "选择设备、项目或任务。",
     "mobile.close": "关闭",
     "mobile.noTask": "未选择任务",
+    "mobile.collapseWorkspaceBar": "收起工作区选择栏",
+    "mobile.expandWorkspaceBar": "展开工作区选择栏",
 
     "status.online": "在线",
     "status.offline": "离线",

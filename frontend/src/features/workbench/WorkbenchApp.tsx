@@ -121,6 +121,7 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
   const [runnerUpdateProgressOpen, setRunnerUpdateProgressOpen] = useState(false);
   const [mobilePickerOpen, setMobilePickerOpen] = useState(false);
   const [mobilePickerSection, setMobilePickerSection] = useState<"servers" | "projects" | "tasks">("tasks");
+  const [mobileWorkspaceSummaryCollapsed, setMobileWorkspaceSummaryCollapsed] = useState(() => isMobileWorkbenchLayout());
   const [browserNotificationPermission, setBrowserNotificationPermission] = useState<NotificationPermission>(
     getBrowserNotificationPermission(),
   );
@@ -835,24 +836,35 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
         </Toast>
       ) : null}
 
-      <button
-        className="mobileWorkspaceSwitch"
-        type="button"
-        onClick={() => setMobilePickerOpen(true)}
-        aria-haspopup="dialog"
-        aria-expanded={mobilePickerOpen}
-      >
-        <span>
-          <strong>
-            <span>{selectedTask?.title ?? t("mobile.noTask")}</span>
-            {selectedTask ? <StatusBadge status={selectedTask.status} /> : null}
-          </strong>
-          <small>
-            {serverDisplayName(selectedServer) || t("session.unknownServer")} / {selectedProject?.name ?? t("tasks.noProject")}
-          </small>
-        </span>
-        <ChevronDown size={18} />
-      </button>
+      <div className={`mobileWorkspaceBar ${mobileWorkspaceSummaryCollapsed ? "isCollapsed" : ""}`}>
+        <button
+          className="mobileWorkspaceSwitch"
+          type="button"
+          onClick={() => setMobilePickerOpen(true)}
+          aria-haspopup="dialog"
+          aria-expanded={mobilePickerOpen}
+        >
+          <span>
+            <strong>
+              <span>{selectedTask?.title ?? t("mobile.noTask")}</span>
+              {selectedTask ? <StatusBadge status={selectedTask.status} /> : null}
+            </strong>
+            <small>
+              {serverDisplayName(selectedServer) || t("session.unknownServer")} / {selectedProject?.name ?? t("tasks.noProject")}
+            </small>
+          </span>
+          <ChevronDown size={18} />
+        </button>
+        <button
+          className="mobileWorkspaceBarToggle"
+          type="button"
+          onClick={() => setMobileWorkspaceSummaryCollapsed((value) => !value)}
+          aria-label={mobileWorkspaceSummaryCollapsed ? t("mobile.expandWorkspaceBar") : t("mobile.collapseWorkspaceBar")}
+          title={mobileWorkspaceSummaryCollapsed ? t("mobile.expandWorkspaceBar") : t("mobile.collapseWorkspaceBar")}
+        >
+          {mobileWorkspaceSummaryCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+        </button>
+      </div>
 
       <main
         id="main-workbench"
@@ -1329,6 +1341,10 @@ function selectedProjectLabel(projects: Project[], selectedProjectId: string | n
 
 function selectedTaskLabel(tasks: Task[], selectedTaskId: string | null, fallback: string) {
   return tasks.find((task) => task.id === selectedTaskId)?.title ?? fallback;
+}
+
+function isMobileWorkbenchLayout() {
+  return typeof window !== "undefined" && window.matchMedia("(max-width: 920px)").matches;
 }
 
 function getBrowserNotificationPermission(): NotificationPermission {

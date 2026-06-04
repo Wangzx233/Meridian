@@ -755,6 +755,18 @@ export function TaskSessionPanel(props: {
       >
         <section className={`primaryWorkspace ${composerCollapsed ? "composerCollapsed" : ""}`} aria-label={t("session.workbench")}>
           <div className="workspaceTabs" role="tablist" aria-label={t("session.tools")}>
+            <label className="mobileWorkspaceToolSelect" htmlFor="mobile-workspace-tool">
+              <span>{t("session.tools")}</span>
+              <select
+                id="mobile-workspace-tool"
+                value={activeWorkspaceTab}
+                onChange={(event) => selectWorkbenchTab(event.target.value as WorkbenchTab)}
+                aria-label={t("session.tools")}
+              >
+                <option value="output">{t("session.output")}</option>
+                <option value="files">{t("session.files")}</option>
+              </select>
+            </label>
             <div className="workspaceTabGroup">
               <button
                 type="button"

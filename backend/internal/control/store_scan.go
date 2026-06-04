@@ -89,6 +89,24 @@ func scanRuns(rows pgx.Rows) ([]Run, error) {
 	return out, rows.Err()
 }
 
+func scanRunInputImage(row pgx.Row) (RunInputImage, error) {
+	var image RunInputImage
+	err := row.Scan(&image.ID, &image.RunID, &image.Filename, &image.MimeType, &image.SizeBytes, &image.CreatedAt)
+	return image, dbErr(err)
+}
+
+func scanRunInputImages(rows pgx.Rows) ([]RunInputImage, error) {
+	var out []RunInputImage
+	for rows.Next() {
+		v, err := scanRunInputImage(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 func scanContextItem(row pgx.Row) (ContextItem, error) {
 	var c ContextItem
 	err := row.Scan(&c.ID, &c.ServerID, &c.ProjectID, &c.TaskID, &c.Scope, &c.Type, &c.Title, &c.Content, &c.Tags, &c.CreatedAt, &c.UpdatedAt)

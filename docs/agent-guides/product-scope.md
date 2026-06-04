@@ -36,6 +36,7 @@ Current capabilities include:
 - Run creation, cancellation, event storage, replay, and browser streaming.
 - Codex session id capture and resume.
 - Optional per-run Codex model, reasoning effort, and service tier overrides.
+- Manual image input for Codex turns.
 - Project file browsing, file read/write actions, project-local terminal, and
   short project-local command execution through the connected runner.
 - In-app run-finished notifications.

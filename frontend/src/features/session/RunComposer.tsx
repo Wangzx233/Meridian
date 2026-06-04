@@ -1,44 +1,19 @@
 import {
-  AlertTriangle,
-  Archive,
   CheckCircle2,
-  ChevronDown,
-  ChevronLeft,
-  Circle,
   ClipboardList,
-  Copy,
-  Download,
-  Edit3,
   FileText,
-  FolderKanban,
-  FolderOpen,
-  History,
+  ImagePlus,
   Loader2,
-  LogOut,
-  Mail,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
-  Play,
-  Plus,
-  RefreshCw,
-  Save,
-  Search,
-  Server as ServerIcon,
-  Settings as SettingsIcon,
-  Square,
-  Terminal,
-  TerminalSquare,
-  Trash2,
   Mic,
+  Play,
   Reply,
+  Square,
   X,
   Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import type { CodexReasoningEffort, CodexServiceTier, CreateRunMode, Run, Task } from "../../types";
+import type { CodexReasoningEffort, CodexServiceTier, CreateRunInputImage, CreateRunMode, Run, Task } from "../../types";
 import { modelOptions, reasoningEffortOptions } from "../../shared/constants";
 import { useI18n } from "../../shared/i18n";
 import { InlineNotice } from "../../shared/ui";
@@ -63,6 +38,10 @@ export function RunComposer(props: {
   canUseReminderCallbacks: boolean;
   reminderCallbacksBlockedReason?: string;
   contextCount: number;
+  inputImages: CreateRunInputImage[];
+  onInputImagesChange: (value: CreateRunInputImage[]) => void;
+  canUseImageInput: boolean;
+  imageInputBlockedReason?: string;
   disabled: boolean;
   canInterrupt: boolean;
   canCompact: boolean;
@@ -82,10 +61,13 @@ export function RunComposer(props: {
   const showMissingSessionHint = props.mode === "resume" && !hasObservedSession;
   const messageReady = Boolean(props.message.trim()) && !showMissingSessionHint;
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const messageRef = useRef(props.message);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const [listening, setListening] = useState(false);
   const speechSupported = typeof window !== "undefined" && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const imageInputDisabled =
+    (props.disabled && !props.canInterrupt) || props.submitting || props.interrupting || !props.canUseImageInput;
 
   useEffect(() => {
     messageRef.current = props.message;
@@ -139,6 +121,51 @@ export function RunComposer(props: {
     recognitionRef.current = recognition;
     recognition.start();
     setListening(true);
+  };
+
+  const chooseImages = () => {
+    if (imageInputDisabled) {
+      focusInput();
+      return;
+    }
+    imageInputRef.current?.click();
+  };
+
+  const addImages = async (files: FileList | null) => {
+    if (!files || files.length === 0) {
+      return;
+    }
+    const existing = props.inputImages;
+    const remaining = Math.max(0, maxInputImages - existing.length);
+    const selected = Array.from(files).slice(0, remaining);
+    if (selected.length === 0) {
+      return;
+    }
+    const nextImages = [...existing];
+    let totalBytes = existing.reduce((total, image) => total + base64ByteSize(image.content_base64), 0);
+    for (const file of selected) {
+      if (!allowedImageTypes.has(file.type) || file.size <= 0 || file.size > maxInputImageBytes) {
+        continue;
+      }
+      if (totalBytes + file.size > maxInputImageTotalBytes) {
+        continue;
+      }
+      try {
+        nextImages.push({
+          filename: file.name || "image",
+          mime_type: file.type,
+          content_base64: await fileToBase64(file),
+        });
+        totalBytes += file.size;
+      } catch {
+        // Ignore unreadable files; browser file reads can fail if the source is removed.
+      }
+    }
+    props.onInputImagesChange(nextImages);
+  };
+
+  const removeImage = (index: number) => {
+    props.onInputImagesChange(props.inputImages.filter((_, itemIndex) => itemIndex !== index));
   };
 
   return (
@@ -245,10 +272,57 @@ export function RunComposer(props: {
         placeholder={t("composer.placeholder")}
         rows={6}
       />
+      <input
+        ref={imageInputRef}
+        className="srOnly"
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        multiple
+        onChange={(event) => {
+          void addImages(event.target.files);
+          event.target.value = "";
+        }}
+        disabled={imageInputDisabled}
+      />
+      {props.inputImages.length > 0 ? (
+        <div className="imageAttachmentList" aria-label={t("composer.imagesAttached")}>
+          {props.inputImages.map((image, index) => (
+            <div className="imageAttachment" key={`${image.filename}-${index}`}>
+              <img src={`data:${image.mime_type};base64,${image.content_base64}`} alt={image.filename} />
+              <div>
+                <strong>{image.filename}</strong>
+                <span>{formatBytes(base64ByteSize(image.content_base64))}</span>
+              </div>
+              <button
+                className="iconButton compact"
+                type="button"
+                onClick={() => removeImage(index)}
+                aria-label={t("composer.removeImage", { name: image.filename })}
+                title={t("composer.removeImage", { name: image.filename })}
+                disabled={props.submitting || props.interrupting}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {props.blockedReason ? <InlineNotice tone="info">{props.blockedReason}</InlineNotice> : null}
       {showMissingSessionHint ? <InlineNotice tone="danger">{t("composer.noSession")}</InlineNotice> : null}
       <div className="composerActions">
         <span className="targetHint">{t("composer.targetHint")}</span>
+        <button
+          className="voiceButton"
+          type="button"
+          onClick={chooseImages}
+          disabled={imageInputDisabled || props.inputImages.length >= maxInputImages}
+          title={props.canUseImageInput ? t("composer.imageTitle") : props.imageInputBlockedReason}
+        >
+          <ImagePlus size={16} />
+          {props.inputImages.length > 0
+            ? t("composer.imageCount", { count: props.inputImages.length })
+            : t("composer.image")}
+        </button>
         <button
           className={`voiceButton ${listening ? "isListening" : ""}`}
           type="button"
@@ -298,4 +372,41 @@ function appendSpeechText(current: string, transcript: string) {
   const trimmedCurrent = current.trimEnd();
   const separator = trimmedCurrent ? " " : "";
   return `${trimmedCurrent}${separator}${transcript}`;
+}
+
+const maxInputImages = 4;
+const maxInputImageBytes = 8 * 1024 * 1024;
+const maxInputImageTotalBytes = 24 * 1024 * 1024;
+const allowedImageTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("Unable to read image."));
+    reader.onload = () => {
+      const value = typeof reader.result === "string" ? reader.result : "";
+      const comma = value.indexOf(",");
+      resolve(comma >= 0 ? value.slice(comma + 1) : value);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function base64ByteSize(value: string) {
+  const clean = value.replace(/\s/g, "");
+  if (!clean) {
+    return 0;
+  }
+  const padding = clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((clean.length * 3) / 4) - padding);
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

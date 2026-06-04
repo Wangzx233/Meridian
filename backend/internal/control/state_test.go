@@ -112,7 +112,7 @@ func TestBuildArgvIncludesCodexOptions(t *testing.T) {
 	model := "gpt-5.5"
 	effort := "xhigh"
 	tier := "fast"
-	argv := buildArgv("codex", "D:\\go\\workplace", RunModeNew, nil, &model, &effort, &tier)
+	argv := buildArgv("codex", "D:\\go\\workplace", RunModeNew, nil, &model, &effort, &tier, nil)
 	got := strings.Join(argv, "\n")
 	for _, want := range []string{"--model\ngpt-5.5", "--config\nmodel_reasoning_effort=\"xhigh\"", "--config\nservice_tier=\"fast\"", "exec\n--dangerously-bypass-approvals-and-sandbox\n--skip-git-repo-check\n--json\n-"} {
 		if !strings.Contains(got, want) {
@@ -123,13 +123,31 @@ func TestBuildArgvIncludesCodexOptions(t *testing.T) {
 
 func TestBuildArgvCanPreserveCodexSandbox(t *testing.T) {
 	t.Setenv("CODEX_BYPASS_APPROVALS_AND_SANDBOX", "false")
-	argv := buildArgv("codex", "D:\\go\\workplace", RunModeNew, nil, nil, nil, nil)
+	argv := buildArgv("codex", "D:\\go\\workplace", RunModeNew, nil, nil, nil, nil, nil)
 	got := strings.Join(argv, "\n")
 	if strings.Contains(got, "--dangerously-bypass-approvals-and-sandbox") {
 		t.Fatalf("argv %q should not bypass approvals and sandbox", argv)
 	}
 	if !strings.Contains(got, "exec\n--skip-git-repo-check\n--json\n-") {
 		t.Fatalf("argv %q missing normal exec flags", argv)
+	}
+}
+
+func TestBuildArgvIncludesImagesForNewAndResume(t *testing.T) {
+	t.Setenv("CODEX_BYPASS_APPROVALS_AND_SANDBOX", "true")
+	sessionID := "sess_123"
+	images := []RunInputImageAttachment{{Filename: "one.png"}, {Filename: "two.jpg"}}
+
+	newArgv := buildArgv("codex", "D:\\go\\workplace", RunModeNew, nil, nil, nil, nil, images)
+	gotNew := strings.Join(newArgv, "\n")
+	if !strings.Contains(gotNew, "exec\n--dangerously-bypass-approvals-and-sandbox\n--image\none.png\n--image\ntwo.jpg\n--skip-git-repo-check\n--json\n-") {
+		t.Fatalf("new argv %q missing image flags", newArgv)
+	}
+
+	resumeArgv := buildArgv("codex", "D:\\go\\workplace", RunModeResume, &sessionID, nil, nil, nil, images)
+	gotResume := strings.Join(resumeArgv, "\n")
+	if !strings.Contains(gotResume, "exec\nresume\n--dangerously-bypass-approvals-and-sandbox\n--image\none.png\n--image\ntwo.jpg\n--skip-git-repo-check\n--json\nsess_123\n-") {
+		t.Fatalf("resume argv %q missing image flags", resumeArgv)
 	}
 }
 

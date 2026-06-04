@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS task_memories;
 DROP TABLE IF EXISTS run_events;
+DROP TABLE IF EXISTS run_input_images;
 DROP TABLE IF EXISTS run_context_items;
 DROP TABLE IF EXISTS context_items;
 DROP TABLE IF EXISTS runs;

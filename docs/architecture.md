@@ -203,6 +203,22 @@ ended_at
 created_at
 ```
 
+### run_input_images
+
+```text
+id
+run_id
+filename
+mime_type
+size_bytes
+content
+created_at
+```
+
+Run image inputs are manual per-turn attachments. They are stored with the run
+so history remains auditable, then sent to the runner for the real Codex CLI
+`--image` arguments.
+
 ### context_items
 
 ```text

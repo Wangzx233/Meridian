@@ -118,6 +118,7 @@ export function TaskSessionPanel(props: {
     raw_command?: boolean;
     reminder_callback_enabled?: boolean;
     context_item_ids: string[];
+    input_images?: CreateRunRequest["input_images"];
   }) => void;
   creatingRun: boolean;
   onInterruptRun: (input: {
@@ -129,6 +130,7 @@ export function TaskSessionPanel(props: {
     raw_command?: boolean;
     reminder_callback_enabled?: boolean;
     context_item_ids: string[];
+    input_images?: CreateRunRequest["input_images"];
   }) => void;
   interruptingRun: boolean;
   onNotice: (notice: Notice) => void;
@@ -153,6 +155,7 @@ export function TaskSessionPanel(props: {
   ];
   const [goalMode, setGoalMode] = useState(false);
   const [reminderCallbacksEnabled, setReminderCallbacksEnabled] = useState(false);
+  const [inputImages, setInputImages] = useState<CreateRunRequest["input_images"]>([]);
   const [taskMemory, setTaskMemory] = useState<TaskMemoryDraft>(emptyTaskMemoryDraft());
   const [memoryDetailsOpen, setMemoryDetailsOpen] = useState(false);
   const [memoryDraftRunId, setMemoryDraftRunId] = useState<string | null>(null);
@@ -242,6 +245,7 @@ export function TaskSessionPanel(props: {
     setMode("auto");
     setGoalMode(false);
     setReminderCallbacksEnabled(false);
+    setInputImages([]);
     setTaskMemory(emptyTaskMemoryDraft());
     setMemoryDetailsOpen(false);
     setMemoryDraftRunId(null);
@@ -290,14 +294,15 @@ export function TaskSessionPanel(props: {
   const canCompact = canSend && hasObservedSession;
   const canChangeGoal = canSend && hasObservedSession;
   const canUseCodexReminders = props.server?.runner_connected === true && props.server.runner_capabilities?.codex_reminders === true;
+  const canUseImageInput = props.server?.runner_connected === true && props.server.runner_capabilities?.codex_image_input === true;
   const reminderCallbacksOn = canUseCodexReminders && reminderCallbacksEnabled;
   const selectedContextItems = selectedContextIds
     .map((id) => props.contextItems.find((item) => item.id === id))
     .filter((item): item is ContextItem => Boolean(item));
   const draftPrompt = props.task
-    ? buildDraftPromptPreview(props.task, mode, hasObservedSession, message, selectedContextItems, reminderCallbacksOn)
+    ? buildDraftPromptPreview(props.task, mode, hasObservedSession, message, selectedContextItems, reminderCallbacksOn, inputImages?.length ?? 0)
     : "";
-  const draftPromptActive = Boolean(props.task && (message.trim() || selectedContextIds.length > 0 || reminderCallbacksOn));
+  const draftPromptActive = Boolean(props.task && (message.trim() || selectedContextIds.length > 0 || reminderCallbacksOn || (inputImages?.length ?? 0) > 0));
   const activeWorkspaceTab = visibleWorkspaceTab;
   const mountedWorkspaceTabs = Array.from(new Set<WorkbenchTab>(["output", activeWorkspaceTab, ...visitedWorkbenchTabs]));
   const sidePanelDragOffset = sidePanelDrag ? Math.max(0, sidePanelDrag.currentY - sidePanelDrag.startY) : 0;
@@ -405,6 +410,10 @@ export function TaskSessionPanel(props: {
     if (!canSend) {
       return;
     }
+    if ((inputImages?.length ?? 0) > 0 && !canUseImageInput) {
+      props.onNotice({ tone: "danger", message: imageInputBlockedReason(props.server, t) });
+      return;
+    }
     props.onCreateRun({
       message: trimmedMessage,
       mode,
@@ -413,10 +422,12 @@ export function TaskSessionPanel(props: {
       codex_service_tier: serviceTier,
       reminder_callback_enabled: reminderCallbacksOn,
       context_item_ids: selectedContextIds,
+      input_images: inputImages,
     });
     clearMessageDraft();
     setReminderCallbacksEnabled(false);
     setSelectedContextIds([]);
+    setInputImages([]);
   };
 
   const submitCompact = () => {
@@ -434,6 +445,7 @@ export function TaskSessionPanel(props: {
     });
     clearMessageDraft();
     setSelectedContextIds([]);
+    setInputImages([]);
   };
 
   const submitInterrupt = () => {
@@ -458,6 +470,10 @@ export function TaskSessionPanel(props: {
     if (!canInterrupt) {
       return;
     }
+    if ((inputImages?.length ?? 0) > 0 && !canUseImageInput) {
+      props.onNotice({ tone: "danger", message: imageInputBlockedReason(props.server, t) });
+      return;
+    }
     props.onInterruptRun({
       message: trimmedMessage,
       mode,
@@ -466,10 +482,12 @@ export function TaskSessionPanel(props: {
       codex_service_tier: serviceTier,
       reminder_callback_enabled: reminderCallbacksOn,
       context_item_ids: selectedContextIds,
+      input_images: inputImages,
     });
     clearMessageDraft();
     setReminderCallbacksEnabled(false);
     setSelectedContextIds([]);
+    setInputImages([]);
   };
 
   const submitGoalCommand = (command: string) => {
@@ -489,6 +507,7 @@ export function TaskSessionPanel(props: {
     setGoalMode(command !== "/goal clear");
     clearMessageDraft();
     setSelectedContextIds([]);
+    setInputImages([]);
   };
 
   const submitGoalToggle = () => {
@@ -509,6 +528,7 @@ export function TaskSessionPanel(props: {
     setGoalMode(nextGoalMode);
     clearMessageDraft();
     setSelectedContextIds([]);
+    setInputImages([]);
   };
 
   const markTaskDone = () => {
@@ -893,6 +913,10 @@ export function TaskSessionPanel(props: {
                   : returnNoticeBlockedReason(props.server, t)
               }
               contextCount={selectedContextIds.length}
+              inputImages={inputImages ?? []}
+              onInputImagesChange={setInputImages}
+              canUseImageInput={canUseImageInput}
+              imageInputBlockedReason={canUseImageInput ? undefined : imageInputBlockedReason(props.server, t)}
               disabled={!canSend || props.creatingRun}
               canInterrupt={canInterrupt}
               canCompact={canCompact}
@@ -1132,6 +1156,7 @@ function buildDraftPromptPreview(
   message: string,
   items: ContextItem[],
   returnNoticeEnabled: boolean,
+  inputImageCount: number,
 ) {
   const command = message.trim();
   if (command && (command === "/compact" || isGoalCommand(command))) {
@@ -1152,6 +1177,9 @@ function buildDraftPromptPreview(
     items.forEach((item, index) => {
       lines.push(`Context item ${index + 1} [${item.type}]: ${item.title}`, item.content, "");
     });
+  }
+  if (inputImageCount > 0) {
+    lines.push(`Image inputs attached: ${inputImageCount}`, "");
   }
   lines.push("Instructions:");
   if (resolvedMode === "resume") {
@@ -1175,6 +1203,16 @@ function buildDraftPromptPreview(
     );
   }
   return lines.join("\n");
+}
+
+function imageInputBlockedReason(server: Server | null, t: (key: string) => string) {
+  if (!server) {
+    return t("composer.imageNoServer");
+  }
+  if (!server.runner_connected) {
+    return t("composer.imageOffline");
+  }
+  return t("composer.imageNeedsUpdate");
 }
 
 function projectFilePathFromHref(href: string, projectWorkdir: string): string | null {

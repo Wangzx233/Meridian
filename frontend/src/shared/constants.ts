@@ -33,6 +33,7 @@ export const composerMaxHeight = 300;
 export const defaultControlUrl = (import.meta.env.VITE_CONTROL_URL ?? window.location.origin).replace(/\/$/, "");
 
 export const runnerFeatureCapabilities = [
+  "codex_image_input",
   "fs_list",
   "project_files",
   "project_file_io",

@@ -40,7 +40,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
-import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunMode, CreateServerRequest, EmailNotificationConfigRequest, ListResponse, MarkDoneRequest, Project, Run, RunnerUpdateProgress, RunnerUpdateProgressResult, Server, Task, WorkbenchNotification } from "../../types";
+import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunInputImage, CreateRunMode, CreateServerRequest, EmailNotificationConfigRequest, ListResponse, MarkDoneRequest, Project, Run, RunnerUpdateProgress, RunnerUpdateProgressResult, Server, Task, WorkbenchNotification } from "../../types";
 import { isActiveRunStatus, isTerminalRunStatus } from "../../utils";
 import {
   activeTaskStatuses,
@@ -587,6 +587,7 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
       raw_command?: boolean;
       reminder_callback_enabled?: boolean;
       context_item_ids: string[];
+      input_images?: CreateRunInputImage[];
     }) =>
       api.createRun(selectedTaskId!, body, crypto.randomUUID()),
     onSuccess: (response) => {
@@ -609,6 +610,7 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
       raw_command?: boolean;
       reminder_callback_enabled?: boolean;
       context_item_ids: string[];
+      input_images?: CreateRunInputImage[];
     }) => api.interruptRun(selectedTaskId!, body, crypto.randomUUID()),
     onSuccess: (response) => {
       selectCreatedRun(response.run, response.task);

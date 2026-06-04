@@ -26,6 +26,13 @@ func (s *Store) CreateRun(ctx context.Context, in CreateRunInput) (CreateRunResu
 	if in.Mode != "auto" && in.Mode != RunModeNew && in.Mode != RunModeResume {
 		return CreateRunResult{}, ErrValidation
 	}
+	normalizedImages, err := normalizeRunInputImages(in.InputImages)
+	if err != nil {
+		return CreateRunResult{}, err
+	}
+	if in.RawCommand && len(normalizedImages) > 0 {
+		return CreateRunResult{}, ErrValidation
+	}
 
 	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -116,6 +123,11 @@ func (s *Store) CreateRun(ctx context.Context, in CreateRunInput) (CreateRunResu
 		}
 		return CreateRunResult{}, err
 	}
+	inputImages, err := insertRunInputImagesTx(ctx, tx, run.ID, normalizedImages)
+	if err != nil {
+		return CreateRunResult{}, err
+	}
+	run.InputImages = inputImages
 	for i, item := range snapshots {
 		_, err = tx.Exec(ctx, `
 			INSERT INTO run_context_items (run_id, context_item_id, order_index, type_snapshot, title_snapshot, content_snapshot)
@@ -181,6 +193,13 @@ func (s *Store) InterruptRun(ctx context.Context, in CreateRunInput, reason stri
 		}
 	}
 	if in.Mode != "auto" && in.Mode != RunModeNew && in.Mode != RunModeResume {
+		return InterruptRunResult{}, ErrValidation
+	}
+	normalizedImages, err := normalizeRunInputImages(in.InputImages)
+	if err != nil {
+		return InterruptRunResult{}, err
+	}
+	if in.RawCommand && len(normalizedImages) > 0 {
 		return InterruptRunResult{}, ErrValidation
 	}
 	if strings.TrimSpace(reason) == "" {
@@ -284,6 +303,11 @@ func (s *Store) InterruptRun(ctx context.Context, in CreateRunInput, reason stri
 		}
 		return InterruptRunResult{}, err
 	}
+	inputImages, err := insertRunInputImagesTx(ctx, tx, run.ID, normalizedImages)
+	if err != nil {
+		return InterruptRunResult{}, err
+	}
+	run.InputImages = inputImages
 	for i, item := range snapshots {
 		_, err = tx.Exec(ctx, `
 			INSERT INTO run_context_items (run_id, context_item_id, order_index, type_snapshot, title_snapshot, content_snapshot)

@@ -100,7 +100,7 @@ func intString(n int) string {
 	return string(buf[i:])
 }
 
-func buildArgv(codexPath, workdir, mode string, sessionID, model, reasoningEffort, serviceTier *string) []string {
+func buildArgv(codexPath, workdir, mode string, sessionID, model, reasoningEffort, serviceTier *string, images []RunInputImageAttachment) []string {
 	if codexPath == "" {
 		codexPath = "codex"
 	}
@@ -114,11 +114,19 @@ func buildArgv(codexPath, workdir, mode string, sessionID, model, reasoningEffor
 	if serviceTier != nil && strings.TrimSpace(*serviceTier) != "" {
 		args = append(args, "--config", `service_tier="`+strings.TrimSpace(*serviceTier)+`"`)
 	}
+	imageArgs := make([]string, 0, len(images)*2)
+	for _, image := range images {
+		if strings.TrimSpace(image.Filename) == "" {
+			continue
+		}
+		imageArgs = append(imageArgs, "--image", strings.TrimSpace(image.Filename))
+	}
 	if mode == RunModeResume {
 		execArgs := []string{"exec", "resume"}
 		if codexBypassApprovalsAndSandboxEnabled() {
 			execArgs = append(execArgs, "--dangerously-bypass-approvals-and-sandbox")
 		}
+		execArgs = append(execArgs, imageArgs...)
 		execArgs = append(execArgs, "--skip-git-repo-check", "--json", valueOrEmpty(sessionID), "-")
 		return append(args, execArgs...)
 	}
@@ -126,6 +134,7 @@ func buildArgv(codexPath, workdir, mode string, sessionID, model, reasoningEffor
 	if codexBypassApprovalsAndSandboxEnabled() {
 		execArgs = append(execArgs, "--dangerously-bypass-approvals-and-sandbox")
 	}
+	execArgs = append(execArgs, imageArgs...)
 	execArgs = append(execArgs, "--skip-git-repo-check", "--json", "-")
 	return append(args, execArgs...)
 }

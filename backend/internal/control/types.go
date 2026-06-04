@@ -260,27 +260,44 @@ type Task struct {
 }
 
 type Run struct {
-	ID                      string     `json:"id"`
-	TaskID                  string     `json:"task_id"`
-	Mode                    string     `json:"mode"`
-	Status                  string     `json:"status"`
-	UserMessage             string     `json:"user_message"`
-	GeneratedPrompt         string     `json:"generated_prompt"`
-	CodexModel              *string    `json:"codex_model"`
-	ReasoningEffort         *string    `json:"codex_reasoning_effort"`
-	ServiceTier             *string    `json:"codex_service_tier"`
-	RawCommand              bool       `json:"raw_command"`
-	ReminderCallbackEnabled bool       `json:"reminder_callback_enabled"`
-	FinalMessage            *string    `json:"final_message"`
-	CodexSessionID          *string    `json:"codex_session_id"`
-	AssignedRunnerID        *string    `json:"assigned_runner_id"`
-	ExitCode                *int       `json:"exit_code"`
-	ErrorMessage            *string    `json:"error_message"`
-	CancelRequestedAt       *time.Time `json:"cancel_requested_at"`
-	RunnerStartedAt         *time.Time `json:"runner_started_at"`
-	StartedAt               time.Time  `json:"started_at"`
-	EndedAt                 *time.Time `json:"ended_at"`
-	CreatedAt               time.Time  `json:"created_at"`
+	ID                      string          `json:"id"`
+	TaskID                  string          `json:"task_id"`
+	Mode                    string          `json:"mode"`
+	Status                  string          `json:"status"`
+	UserMessage             string          `json:"user_message"`
+	GeneratedPrompt         string          `json:"generated_prompt"`
+	InputImages             []RunInputImage `json:"input_images,omitempty"`
+	CodexModel              *string         `json:"codex_model"`
+	ReasoningEffort         *string         `json:"codex_reasoning_effort"`
+	ServiceTier             *string         `json:"codex_service_tier"`
+	RawCommand              bool            `json:"raw_command"`
+	ReminderCallbackEnabled bool            `json:"reminder_callback_enabled"`
+	FinalMessage            *string         `json:"final_message"`
+	CodexSessionID          *string         `json:"codex_session_id"`
+	AssignedRunnerID        *string         `json:"assigned_runner_id"`
+	ExitCode                *int            `json:"exit_code"`
+	ErrorMessage            *string         `json:"error_message"`
+	CancelRequestedAt       *time.Time      `json:"cancel_requested_at"`
+	RunnerStartedAt         *time.Time      `json:"runner_started_at"`
+	StartedAt               time.Time       `json:"started_at"`
+	EndedAt                 *time.Time      `json:"ended_at"`
+	CreatedAt               time.Time       `json:"created_at"`
+}
+
+type RunInputImage struct {
+	ID        string    `json:"id"`
+	RunID     string    `json:"run_id,omitempty"`
+	Filename  string    `json:"filename"`
+	MimeType  string    `json:"mime_type"`
+	SizeBytes int64     `json:"size_bytes"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+}
+
+type RunInputImageAttachment struct {
+	ID            string `json:"id"`
+	Filename      string `json:"filename"`
+	MimeType      string `json:"mime_type"`
+	ContentBase64 string `json:"content_base64"`
 }
 
 type ContextItem struct {
@@ -386,21 +403,22 @@ type RunnerHeartbeatPayload struct {
 }
 
 type RunAssignPayload struct {
-	RunID                   string   `json:"run_id"`
-	TaskID                  string   `json:"task_id"`
-	ProjectID               string   `json:"project_id"`
-	Workdir                 string   `json:"workdir"`
-	Mode                    string   `json:"mode"`
-	CodexSessionID          *string  `json:"codex_session_id"`
-	CodexModel              *string  `json:"codex_model,omitempty"`
-	ReasoningEffort         *string  `json:"codex_reasoning_effort,omitempty"`
-	ServiceTier             *string  `json:"codex_service_tier,omitempty"`
-	ReminderCallbackEnabled bool     `json:"reminder_callback_enabled,omitempty"`
-	Prompt                  string   `json:"prompt"`
-	Argv                    []string `json:"argv"`
-	AssignedRunner          string   `json:"-"`
-	TargetRunnerID          string   `json:"-"`
-	ProjectServerID         string   `json:"-"`
+	RunID                   string                    `json:"run_id"`
+	TaskID                  string                    `json:"task_id"`
+	ProjectID               string                    `json:"project_id"`
+	Workdir                 string                    `json:"workdir"`
+	Mode                    string                    `json:"mode"`
+	CodexSessionID          *string                   `json:"codex_session_id"`
+	CodexModel              *string                   `json:"codex_model,omitempty"`
+	ReasoningEffort         *string                   `json:"codex_reasoning_effort,omitempty"`
+	ServiceTier             *string                   `json:"codex_service_tier,omitempty"`
+	ReminderCallbackEnabled bool                      `json:"reminder_callback_enabled,omitempty"`
+	Prompt                  string                    `json:"prompt"`
+	Argv                    []string                  `json:"argv"`
+	InputImages             []RunInputImageAttachment `json:"input_images,omitempty"`
+	AssignedRunner          string                    `json:"-"`
+	TargetRunnerID          string                    `json:"-"`
+	ProjectServerID         string                    `json:"-"`
 }
 
 type RunStartedPayload struct {

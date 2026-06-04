@@ -853,6 +853,7 @@ func (a *Agent) register() error {
 		"active_run_ids": a.activeRuns(),
 		"capabilities": map[string]any{
 			"codex_exec":                  true,
+			"codex_image_input":           true,
 			"cancel":                      true,
 			"fs_list":                     true,
 			"project_files":               true,

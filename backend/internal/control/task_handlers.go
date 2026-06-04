@@ -60,17 +60,25 @@ func (a *API) handleTaskRoutes(w http.ResponseWriter, r *http.Request) {
 			a.respondList(w, items, err)
 		case http.MethodPost:
 			var in struct {
-				Message                 string   `json:"message"`
-				Mode                    string   `json:"mode"`
-				CodexModel              string   `json:"codex_model"`
-				ReasoningEffort         string   `json:"codex_reasoning_effort"`
-				ServiceTier             string   `json:"codex_service_tier"`
-				RawCommand              bool     `json:"raw_command"`
-				ReminderCallbackEnabled bool     `json:"reminder_callback_enabled"`
-				ContextItemIDs          []string `json:"context_item_ids"`
+				Message                 string               `json:"message"`
+				Mode                    string               `json:"mode"`
+				CodexModel              string               `json:"codex_model"`
+				ReasoningEffort         string               `json:"codex_reasoning_effort"`
+				ServiceTier             string               `json:"codex_service_tier"`
+				RawCommand              bool                 `json:"raw_command"`
+				ReminderCallbackEnabled bool                 `json:"reminder_callback_enabled"`
+				ContextItemIDs          []string             `json:"context_item_ids"`
+				InputImages             []RunInputImageInput `json:"input_images"`
 			}
 			if !decodeJSON(w, r, &in) {
 				return
+			}
+			hasInputImages := len(in.InputImages) > 0
+			if hasInputImages {
+				if err := a.requireTaskRunnerCapability(r.Context(), taskID, "codex_image_input"); err != nil {
+					a.respond(w, http.StatusCreated, nil, err)
+					return
+				}
 			}
 			result, err := a.store.CreateRun(r.Context(), CreateRunInput{
 				TaskID:                  taskID,
@@ -82,6 +90,7 @@ func (a *API) handleTaskRoutes(w http.ResponseWriter, r *http.Request) {
 				RawCommand:              in.RawCommand,
 				ReminderCallbackEnabled: in.ReminderCallbackEnabled && a.taskRunnerSupportsCapability(r.Context(), taskID, "codex_reminders"),
 				ContextItemIDs:          in.ContextItemIDs,
+				InputImages:             in.InputImages,
 				IdempotencyKey:          r.Header.Get("Idempotency-Key"),
 			})
 			if err != nil {
@@ -106,17 +115,25 @@ func (a *API) handleTaskRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		taskID := parts[0]
 		var in struct {
-			Message                 string   `json:"message"`
-			Mode                    string   `json:"mode"`
-			CodexModel              string   `json:"codex_model"`
-			ReasoningEffort         string   `json:"codex_reasoning_effort"`
-			ServiceTier             string   `json:"codex_service_tier"`
-			RawCommand              bool     `json:"raw_command"`
-			ReminderCallbackEnabled bool     `json:"reminder_callback_enabled"`
-			ContextItemIDs          []string `json:"context_item_ids"`
+			Message                 string               `json:"message"`
+			Mode                    string               `json:"mode"`
+			CodexModel              string               `json:"codex_model"`
+			ReasoningEffort         string               `json:"codex_reasoning_effort"`
+			ServiceTier             string               `json:"codex_service_tier"`
+			RawCommand              bool                 `json:"raw_command"`
+			ReminderCallbackEnabled bool                 `json:"reminder_callback_enabled"`
+			ContextItemIDs          []string             `json:"context_item_ids"`
+			InputImages             []RunInputImageInput `json:"input_images"`
 		}
 		if !decodeJSON(w, r, &in) {
 			return
+		}
+		hasInputImages := len(in.InputImages) > 0
+		if hasInputImages {
+			if err := a.requireTaskRunnerCapability(r.Context(), taskID, "codex_image_input"); err != nil {
+				a.respond(w, http.StatusCreated, nil, err)
+				return
+			}
 		}
 		result, err := a.store.InterruptRun(r.Context(), CreateRunInput{
 			TaskID:                  taskID,
@@ -128,6 +145,7 @@ func (a *API) handleTaskRoutes(w http.ResponseWriter, r *http.Request) {
 			RawCommand:              in.RawCommand,
 			ReminderCallbackEnabled: in.ReminderCallbackEnabled && a.taskRunnerSupportsCapability(r.Context(), taskID, "codex_reminders"),
 			ContextItemIDs:          in.ContextItemIDs,
+			InputImages:             in.InputImages,
 			IdempotencyKey:          r.Header.Get("Idempotency-Key"),
 		}, "Interrupted by a newer user instruction.")
 		if err != nil {
@@ -152,17 +170,27 @@ func (a *API) handleTaskRoutes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) taskRunnerSupportsCapability(ctx context.Context, taskID, capability string) bool {
+	return a.requireTaskRunnerCapability(ctx, taskID, capability) == nil
+}
+
+func (a *API) requireTaskRunnerCapability(ctx context.Context, taskID, capability string) error {
 	task, err := a.store.GetTask(ctx, taskID)
 	if err != nil {
-		return false
+		return err
 	}
 	project, err := a.store.GetProject(ctx, task.ProjectID)
 	if err != nil {
-		return false
+		return err
 	}
 	server, err := a.store.GetServer(ctx, project.ServerID)
 	if err != nil {
-		return false
+		return err
 	}
-	return a.runners.Supports(server.RunnerID, capability)
+	if !a.runners.Connected(server.RunnerID) {
+		return ErrRunnerUnavailable
+	}
+	if !a.runners.Supports(server.RunnerID, capability) {
+		return ErrRunnerUnsupported
+	}
+	return nil
 }

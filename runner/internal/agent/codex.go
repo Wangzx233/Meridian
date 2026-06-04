@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,18 +20,26 @@ import (
 )
 
 type Assignment struct {
-	RunID                   string   `json:"run_id"`
-	TaskID                  string   `json:"task_id"`
-	ProjectID               string   `json:"project_id"`
-	Workdir                 string   `json:"workdir"`
-	Mode                    string   `json:"mode"`
-	CodexSessionID          *string  `json:"codex_session_id"`
-	CodexModel              *string  `json:"codex_model,omitempty"`
-	ReasoningEffort         *string  `json:"codex_reasoning_effort,omitempty"`
-	ServiceTier             *string  `json:"codex_service_tier,omitempty"`
-	ReminderCallbackEnabled bool     `json:"reminder_callback_enabled,omitempty"`
-	Prompt                  string   `json:"prompt"`
-	Argv                    []string `json:"argv"`
+	RunID                   string                    `json:"run_id"`
+	TaskID                  string                    `json:"task_id"`
+	ProjectID               string                    `json:"project_id"`
+	Workdir                 string                    `json:"workdir"`
+	Mode                    string                    `json:"mode"`
+	CodexSessionID          *string                   `json:"codex_session_id"`
+	CodexModel              *string                   `json:"codex_model,omitempty"`
+	ReasoningEffort         *string                   `json:"codex_reasoning_effort,omitempty"`
+	ServiceTier             *string                   `json:"codex_service_tier,omitempty"`
+	ReminderCallbackEnabled bool                      `json:"reminder_callback_enabled,omitempty"`
+	Prompt                  string                    `json:"prompt"`
+	Argv                    []string                  `json:"argv"`
+	InputImages             []RunInputImageAttachment `json:"input_images,omitempty"`
+}
+
+type RunInputImageAttachment struct {
+	ID            string `json:"id"`
+	Filename      string `json:"filename"`
+	MimeType      string `json:"mime_type"`
+	ContentBase64 string `json:"content_base64"`
 }
 
 type CodexEvent struct {
@@ -82,6 +91,17 @@ func (r *CodexRunner) Run(ctx context.Context, assign Assignment, onEvent func(C
 	}
 	env := mergedEnv(r.Env)
 	argv := append([]string(nil), assign.Argv...)
+	cleanupImages := func() {}
+	if len(assign.InputImages) > 0 {
+		var imageErr error
+		argv, cleanupImages, imageErr = prepareInputImages(assign.RunID, argv, assign.InputImages)
+		if imageErr != nil {
+			msg := imageErr.Error()
+			emitRunnerError(onEvent, "image_input_failed", msg)
+			return RunResult{Status: "failed", ErrorMessage: &msg}
+		}
+		defer cleanupImages()
+	}
 	resolved, err := resolveExecutable(argv[0], env)
 	if err != nil {
 		msg := err.Error()
@@ -190,6 +210,139 @@ func (r *CodexRunner) Run(ctx context.Context, assign Assignment, onEvent func(C
 	msg := waitErr.Error()
 	result.ErrorMessage = &msg
 	return result
+}
+
+func prepareInputImages(runID string, argv []string, images []RunInputImageAttachment) ([]string, func(), error) {
+	if len(images) == 0 {
+		return argv, func() {}, nil
+	}
+	dir, err := os.MkdirTemp("", "meridian-run-images-"+safeTempNamePart(runID)+"-")
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("create image input temp dir: %w", err)
+	}
+	cleanup := func() {
+		_ = os.RemoveAll(dir)
+	}
+
+	paths := make([]string, 0, len(images))
+	used := map[string]int{}
+	for index, image := range images {
+		content, err := base64.StdEncoding.DecodeString(strings.TrimSpace(image.ContentBase64))
+		if err != nil {
+			cleanup()
+			return nil, func() {}, fmt.Errorf("decode image %q: %w", image.Filename, err)
+		}
+		if len(content) == 0 {
+			cleanup()
+			return nil, func() {}, fmt.Errorf("image %q is empty", image.Filename)
+		}
+		name := safeInputImageFilename(image.Filename, index)
+		key := strings.ToLower(name)
+		if count := used[key]; count > 0 {
+			ext := filepath.Ext(name)
+			stem := strings.TrimSuffix(name, ext)
+			name = stem + "-" + intString(count+1) + ext
+		}
+		used[key]++
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			cleanup()
+			return nil, func() {}, fmt.Errorf("write image %q: %w", image.Filename, err)
+		}
+		paths = append(paths, path)
+	}
+
+	return withImageArgs(argv, paths), cleanup, nil
+}
+
+func withImageArgs(argv []string, paths []string) []string {
+	if len(paths) == 0 {
+		return argv
+	}
+	argv = withoutImageArgs(argv)
+	insertAt := len(argv)
+	if jsonIndex := indexArg(argv, "--json"); jsonIndex >= 0 {
+		insertAt = jsonIndex
+	} else if dashIndex := indexArg(argv, "-"); dashIndex >= 0 {
+		insertAt = dashIndex
+	}
+	out := make([]string, 0, len(argv)+len(paths)*2)
+	out = append(out, argv[:insertAt]...)
+	for _, path := range paths {
+		out = append(out, "--image", path)
+	}
+	out = append(out, argv[insertAt:]...)
+	return out
+}
+
+func withoutImageArgs(argv []string) []string {
+	out := make([]string, 0, len(argv))
+	for index := 0; index < len(argv); index++ {
+		arg := argv[index]
+		if arg == "--image" || arg == "-i" {
+			if index+1 < len(argv) {
+				index++
+			}
+			continue
+		}
+		out = append(out, arg)
+	}
+	return out
+}
+
+func safeInputImageFilename(filename string, index int) string {
+	filename = strings.TrimSpace(filepath.Base(strings.ReplaceAll(filename, "\\", "/")))
+	if filename == "" || filename == "." || filename == string(filepath.Separator) {
+		filename = "image-" + intString(index+1) + ".img"
+	}
+	filename = strings.Map(func(r rune) rune {
+		if r == '/' || r == '\\' || r == ':' || r == 0 || r < 32 {
+			return '-'
+		}
+		return r
+	}, filename)
+	if len(filename) > 160 {
+		ext := filepath.Ext(filename)
+		stem := strings.TrimSuffix(filename, ext)
+		if len(ext) > 20 {
+			ext = ""
+		}
+		if len(stem) > 140 {
+			stem = stem[:140]
+		}
+		filename = stem + ext
+	}
+	return filename
+}
+
+func safeTempNamePart(value string) string {
+	value = strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			return r
+		}
+		return '-'
+	}, value)
+	if value == "" {
+		return "run"
+	}
+	if len(value) > 64 {
+		return value[:64]
+	}
+	return value
+}
+
+func intString(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
 }
 
 func waitForProcessAndReaders(cmd *exec.Cmd, stdout, stderr io.Closer, done <-chan struct{}) error {

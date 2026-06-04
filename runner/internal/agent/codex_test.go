@@ -122,6 +122,25 @@ func TestCodexRunnerUsesArgvExecution(t *testing.T) {
 	}
 }
 
+func TestCodexRunnerAttachesInputImages(t *testing.T) {
+	argv := []string{os.Args[0], "-test.run=TestHelperCodexProcess", "--", "exec", "--json", "-"}
+	runner := CodexRunner{Env: []string{"CTW_HELPER_CODEX=assert_image"}}
+	result := runner.Run(context.Background(), Assignment{
+		RunID:   "run_test",
+		Workdir: mustGetwd(t),
+		Prompt:  "inspect image",
+		Argv:    argv,
+		InputImages: []RunInputImageAttachment{{
+			Filename:      "screen.png",
+			MimeType:      "image/png",
+			ContentBase64: "aW1hZ2UtYnl0ZXM=",
+		}},
+	}, func(CodexEvent) {})
+	if result.Status != "succeeded" {
+		t.Fatalf("status = %q, error = %v", result.Status, result.ErrorMessage)
+	}
+}
+
 func TestCodexRunnerDoesNotUsePlainStdoutAsFinalMessage(t *testing.T) {
 	argv := []string{os.Args[0], "-test.run=TestHelperCodexProcess", "--"}
 	runner := CodexRunner{Env: []string{"CTW_HELPER_CODEX=plain_after_json"}}
@@ -867,6 +886,27 @@ func TestHelperCodexProcess(t *testing.T) {
 	if mode == "hang" {
 		time.Sleep(10 * time.Second)
 		os.Exit(0)
+	}
+	if mode == "assert_image" {
+		var imagePath string
+		for index, arg := range os.Args {
+			if arg == "--image" && index+1 < len(os.Args) {
+				imagePath = os.Args[index+1]
+			}
+		}
+		if imagePath == "" {
+			fmt.Fprintln(os.Stderr, "missing --image")
+			os.Exit(2)
+		}
+		data, err := os.ReadFile(imagePath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		if string(data) != "image-bytes" {
+			fmt.Fprintf(os.Stderr, "image content = %q\n", string(data))
+			os.Exit(2)
+		}
 	}
 	fmt.Fprintln(os.Stdout, `{"text":"ok","session_id":"sess"}`)
 	if mode == "plain_after_json" {

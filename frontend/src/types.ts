@@ -223,6 +223,7 @@ export type Run = {
   status: RunStatus;
   user_message: string;
   generated_prompt: string;
+  input_images?: RunInputImage[];
   codex_model: string | null;
   codex_reasoning_effort: Exclude<CodexReasoningEffort, ""> | null;
   codex_service_tier: Exclude<CodexServiceTier, ""> | null;
@@ -238,6 +239,14 @@ export type Run = {
   started_at: Timestamp | null;
   ended_at: Timestamp | null;
   created_at: Timestamp;
+};
+
+export type RunInputImage = {
+  id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at?: Timestamp;
 };
 
 export type ContextScope = "global" | "server" | "project" | "task";
@@ -407,6 +416,13 @@ export type CreateRunRequest = {
   raw_command?: boolean;
   reminder_callback_enabled?: boolean;
   context_item_ids: string[];
+  input_images?: CreateRunInputImage[];
+};
+
+export type CreateRunInputImage = {
+  filename: string;
+  mime_type: string;
+  content_base64: string;
 };
 
 export type CreateRunResponse = {

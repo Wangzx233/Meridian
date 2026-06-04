@@ -19,7 +19,11 @@ func (s *Store) ListRuns(ctx context.Context, taskID string) ([]Run, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanRuns(rows)
+	items, err := scanRuns(rows)
+	if err != nil {
+		return nil, err
+	}
+	return items, s.hydrateRunInputImages(ctx, items)
 }
 
 func (s *Store) GetRun(ctx context.Context, id string) (Run, error) {
@@ -28,7 +32,15 @@ func (s *Store) GetRun(ctx context.Context, id string) (Run, error) {
 		       assigned_runner_id, exit_code, error_message, cancel_requested_at, runner_started_at,
 		       started_at, ended_at, created_at
 		FROM runs WHERE id=$1`, id)
-	return scanRun(row)
+	run, err := scanRun(row)
+	if err != nil {
+		return Run{}, err
+	}
+	items := []Run{run}
+	if err := s.hydrateRunInputImages(ctx, items); err != nil {
+		return Run{}, err
+	}
+	return items[0], nil
 }
 
 func (s *Store) ListEvents(ctx context.Context, runID string, afterSeq int64) ([]RunEvent, error) {
@@ -481,6 +493,10 @@ func (s *Store) NextQueuedRunsForRunner(ctx context.Context, runnerID string, li
 		if err := rows.Scan(&rec.RunID, &rec.TaskID, &rec.ProjectID, &rec.Workdir, &rec.Mode, &rec.CodexSessionID, &rec.CodexModel, &rec.ReasoningEffort, &rec.ServiceTier, &rec.ReminderCallbackEnabled, &rec.Prompt, &rec.RunnerID); err != nil {
 			return nil, err
 		}
+		rec.InputImages, err = loadRunInputImageAttachmentsTx(ctx, tx, rec.RunID)
+		if err != nil {
+			return nil, err
+		}
 		_, err = tx.Exec(ctx, `UPDATE runs SET assigned_runner_id=$2 WHERE id=$1 AND assigned_runner_id IS NULL`, rec.RunID, runnerID)
 		if err != nil {
 			return nil, err
@@ -506,6 +522,10 @@ func (s *Store) assignmentForRun(ctx context.Context, tx pgx.Tx, runID, codexPat
 	if err != nil {
 		return nil, dbErr(err)
 	}
+	rec.InputImages, err = loadRunInputImageAttachmentsTx(ctx, tx, rec.RunID)
+	if err != nil {
+		return nil, err
+	}
 	return assignmentFromRecord(rec), nil
 }
 
@@ -522,7 +542,8 @@ func assignmentFromRecord(rec queuedRunRecord) *RunAssignPayload {
 		ServiceTier:             rec.ServiceTier,
 		ReminderCallbackEnabled: rec.ReminderCallbackEnabled,
 		Prompt:                  rec.Prompt,
-		Argv:                    buildArgv("codex", rec.Workdir, rec.Mode, rec.CodexSessionID, rec.CodexModel, rec.ReasoningEffort, rec.ServiceTier),
+		Argv:                    buildArgv("codex", rec.Workdir, rec.Mode, rec.CodexSessionID, rec.CodexModel, rec.ReasoningEffort, rec.ServiceTier, rec.InputImages),
+		InputImages:             rec.InputImages,
 		TargetRunnerID:          rec.RunnerID,
 	}
 }

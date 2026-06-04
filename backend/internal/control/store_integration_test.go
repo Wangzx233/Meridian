@@ -274,6 +274,7 @@ func TestStoreDeleteProjectIntegration(t *testing.T) {
 	assertTableCount(t, pool, "run_events", 0)
 	assertTableCount(t, pool, "context_items", 0)
 	assertTableCount(t, pool, "run_context_items", 0)
+	assertTableCount(t, pool, "run_input_images", 0)
 	assertTableCount(t, pool, "workbench_notifications", 0)
 	assertTableCount(t, pool, "servers", 1)
 }
@@ -432,6 +433,62 @@ func TestStoreCreateRunIdempotencyIntegration(t *testing.T) {
 	}
 	if second.Run.ID != first.Run.ID {
 		t.Fatalf("idempotent retry run id = %q, want %q", second.Run.ID, first.Run.ID)
+	}
+}
+
+func TestCreateRunStoresInputImagesIntegration(t *testing.T) {
+	dsn := testDatabaseURL(t)
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect database: %v", err)
+	}
+	defer pool.Close()
+	resetIntegrationDB(t, pool)
+
+	store := NewStore(pool)
+	server, err := store.CreateServer(ctx, CreateServerInput{Name: "desktop", RunnerID: "runner_desktop"})
+	if err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+	project, err := store.CreateProject(ctx, CreateProjectInput{ServerID: server.ID, Name: "workbench", Workdir: "D:\\go\\workplace"})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, CreateTaskInput{Title: "Image input"})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	created, err := store.CreateRun(ctx, CreateRunInput{
+		TaskID:  task.ID,
+		Message: "Inspect this screenshot",
+		Mode:    "new",
+		InputImages: []RunInputImageInput{{
+			Filename:      "screen.png",
+			MimeType:      "image/png",
+			ContentBase64: "iVBORw0KGgo=",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("create run with image: %v", err)
+	}
+	if len(created.Run.InputImages) != 1 || created.Run.InputImages[0].Filename != "screen.png" || created.Run.InputImages[0].SizeBytes != 8 {
+		t.Fatalf("run images = %#v, want screen.png metadata", created.Run.InputImages)
+	}
+	if created.Assign == nil || len(created.Assign.InputImages) != 1 || created.Assign.InputImages[0].ContentBase64 != "iVBORw0KGgo=" {
+		t.Fatalf("assignment images = %#v, want encoded content", created.Assign)
+	}
+	if got := strings.Join(created.Assign.Argv, "\n"); !strings.Contains(got, "--image\nscreen.png") {
+		t.Fatalf("assignment argv missing image flag: %#v", created.Assign.Argv)
+	}
+
+	runs, err := store.ListRuns(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs) != 1 || len(runs[0].InputImages) != 1 || runs[0].InputImages[0].ID == "" {
+		t.Fatalf("listed run images = %#v, want stored metadata", runs)
 	}
 }
 
@@ -626,7 +683,7 @@ func TestDatabaseEnforcesOneActiveRunPerTaskIntegration(t *testing.T) {
 func resetIntegrationDB(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(), `
-		TRUNCATE run_events, run_context_items, context_items, task_memories, email_notification_configs, workbench_notifications, runs, tasks, projects, servers, auth_users, auth_settings
+		TRUNCATE run_events, run_input_images, run_context_items, context_items, task_memories, email_notification_configs, workbench_notifications, runs, tasks, projects, servers, auth_users, auth_settings
 		RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("reset integration database: %v", err)

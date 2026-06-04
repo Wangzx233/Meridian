@@ -97,6 +97,7 @@ can be added later without changing the top-level shape.
   },
   "runner_capabilities": {
     "codex_exec": true,
+    "codex_image_input": true,
     "cancel": true,
     "fs_list": true,
     "project_files": true,
@@ -181,6 +182,15 @@ Task status values:
   "status": "succeeded",
   "user_message": "Implement the next change.",
   "generated_prompt": "Continue the current task...",
+  "input_images": [
+    {
+      "id": "img_123",
+      "filename": "screenshot.png",
+      "mime_type": "image/png",
+      "size_bytes": 1048576,
+      "created_at": "2026-05-11T08:00:58Z"
+    }
+  ],
   "codex_model": "gpt-5.5",
   "codex_reasoning_effort": "high",
   "codex_service_tier": "fast",
@@ -218,6 +228,9 @@ Codex config. Supported reasoning effort values are `low`, `medium`, `high`,
 and `xhigh`. Supported service tier override values currently include `fast`.
 `raw_command` is reserved for explicit Codex slash-command turns such as
 `/compact`, where the stored prompt is sent to Codex without workbench wrapping.
+`input_images` contains metadata for manually attached per-turn images. Image
+content is stored with the run for auditability, but list/get run responses only
+return metadata.
 `reminder_callback_enabled` records whether this run was allowed to expose the
 runner-local `send-back` helper to Codex.
 
@@ -931,6 +944,13 @@ Create run request:
   "codex_service_tier": "fast",
   "raw_command": false,
   "reminder_callback_enabled": true,
+  "input_images": [
+    {
+      "filename": "screenshot.png",
+      "mime_type": "image/png",
+      "content_base64": "iVBORw0KGgo..."
+    }
+  ],
   "context_item_ids": ["ctx_123", "ctx_456"]
 }
 ```
@@ -967,6 +987,15 @@ Create-run rules:
 - `new` starts a new Codex session for the task.
 - Creating a run stores selected context snapshots immediately.
 - Creating a run builds and stores `generated_prompt` immediately.
+- `input_images` is optional and supports up to 4 PNG, JPEG, GIF, or WebP
+  images. Each image may be up to 8 MiB, with a 24 MiB total per run.
+- Runs with `input_images` require a connected runner that reports
+  `codex_image_input`. The control plane stores the image bytes, sends them to
+  the runner with the assignment, and the runner invokes Codex CLI with
+  `--image` file arguments.
+- Runs with `input_images` follow the normal `mode` rules; Codex CLI receives
+  the images on either new or resume turns.
+- `raw_command` runs cannot include `input_images`.
 - `reminder_callback_enabled=true` is accepted only when the target runner is
   connected and reports `codex_reminders`; raw command runs ignore it.
 - Creating a run inserts a `queued` run and moves the task to `running` in the
@@ -1243,6 +1272,7 @@ Direction: runner to control plane.
     "codex_path": "codex",
     "capabilities": {
       "codex_exec": true,
+      "codex_image_input": true,
       "cancel": true,
       "fs_list": true,
       "project_files": true,
@@ -1300,6 +1330,14 @@ Direction: control plane to runner.
     "codex_service_tier": "fast",
     "reminder_callback_enabled": true,
     "prompt": "Continue the current task...",
+    "input_images": [
+      {
+        "id": "img_123",
+        "filename": "screenshot.png",
+        "mime_type": "image/png",
+        "content_base64": "iVBORw0KGgo..."
+      }
+    ],
     "argv": [
       "codex",
       "--cd",
@@ -1313,6 +1351,8 @@ Direction: control plane to runner.
       "exec",
       "resume",
       "--dangerously-bypass-approvals-and-sandbox",
+      "--image",
+      "screenshot.png",
       "--skip-git-repo-check",
       "--json",
       "codex-session-id",
@@ -1322,7 +1362,7 @@ Direction: control plane to runner.
 }
 ```
 
-For `mode = new`, `argv` must be:
+For `mode = new` without image input, `argv` must be:
 
 ```json
 ["codex", "--cd", "D:\\go\\workplace", "exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "--json", "-"]
@@ -1331,8 +1371,14 @@ For `mode = new`, `argv` must be:
 When run options are set, they appear before `exec`, for example
 `["codex", "--cd", "...", "--model", "gpt-5.5", "--config",
 "model_reasoning_effort=\"high\"", "exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "--json", "-"]`.
+When `input_images` is present, `--image` arguments appear after `exec` and
+before `--json`; the control plane may use the original filename in `argv`, and
+the runner rewrites those entries to temporary absolute paths before execution.
 
 The runner writes `prompt` to Codex stdin.
+When `input_images` is present, the runner writes the decoded bytes to
+temporary local files, rewrites the assignment image argv entries to those
+absolute paths, and removes the temporary files after the Codex process exits.
 When `reminder_callback_enabled` is true, the runner adds `send-back` to
 the Codex process PATH and injects a per-run local callback URL/token through
 environment variables. The callback listener binds only to `127.0.0.1`.

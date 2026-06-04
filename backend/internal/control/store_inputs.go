@@ -15,7 +15,14 @@ type CreateRunInput struct {
 	RawCommand              bool
 	ReminderCallbackEnabled bool
 	ContextItemIDs          []string
+	InputImages             []RunInputImageInput
 	IdempotencyKey          string
+}
+
+type RunInputImageInput struct {
+	Filename      string `json:"filename"`
+	MimeType      string `json:"mime_type"`
+	ContentBase64 string `json:"content_base64"`
 }
 
 type CreateRunResult struct {
@@ -149,4 +156,5 @@ type queuedRunRecord struct {
 	ReminderCallbackEnabled bool
 	Prompt                  string
 	RunnerID                string
+	InputImages             []RunInputImageAttachment
 }

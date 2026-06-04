@@ -1220,6 +1220,64 @@ textarea:disabled {
   line-height: 1.45;
 }
 
+.imageAttachmentList {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.imageAttachment {
+  min-width: 180px;
+  max-width: 240px;
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 7px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+
+.imageAttachment img {
+  width: 40px;
+  height: 40px;
+  display: block;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+}
+
+.imageAttachment div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.imageAttachment strong,
+.imageAttachment span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.imageAttachment strong {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.imageAttachment span {
+  color: var(--text-subtle);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
 .composerActions {
   justify-content: flex-end;
   gap: 12px;

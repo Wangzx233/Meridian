@@ -936,6 +936,7 @@ export function TaskSessionPanel(props: {
               onCompact={submitCompact}
               onInterrupt={submitInterrupt}
               interrupting={props.interruptingRun}
+              onCollapse={() => setComposerCollapsed(true)}
             />
           )}
         </section>

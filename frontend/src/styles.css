@@ -1146,6 +1146,10 @@ summary {
   background: var(--surface);
 }
 
+.composerCollapseHandle {
+  display: none;
+}
+
 .composerToolbar {
   justify-content: space-between;
   gap: 8px;
@@ -3689,7 +3693,7 @@ textarea:disabled {
   }
 
   .primaryWorkspace:not(.composerCollapsed) {
-    grid-template-rows: auto minmax(0, 1fr) clamp(136px, 26dvh, 188px);
+    grid-template-rows: auto minmax(0, 1fr) 12px clamp(112px, var(--composer-height, 154px), min(300px, 46dvh));
   }
 
   .sidePanel {
@@ -3760,9 +3764,26 @@ textarea:disabled {
   }
 
   .workbenchBody > .resizeHandle,
-  .primaryWorkspace > .resizeHandle,
   .sidePanel > .resizeHandle {
     display: none;
+  }
+
+  .primaryWorkspace > .resizeHandle {
+    display: block;
+    min-height: 12px;
+    background: var(--surface);
+  }
+
+  .primaryWorkspace > .resizeHandle.isHidden {
+    min-height: 0;
+  }
+
+  .primaryWorkspace > .resizeHandle::before {
+    top: 4px;
+    height: 4px;
+    right: calc(50% - 24px);
+    left: calc(50% - 24px);
+    background: var(--border-strong);
   }
 
   .runTimeline,
@@ -3779,9 +3800,36 @@ textarea:disabled {
   .composer {
     height: 100%;
     min-height: 0;
-    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+    padding: 0 10px max(8px, env(safe-area-inset-bottom));
     overflow-y: auto;
-    border-top: 1px solid var(--border);
+    border-top: 0;
+  }
+
+  .composerCollapseHandle {
+    width: 100%;
+    min-height: 28px;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 8px;
+    padding: 0 2px;
+    border: 0;
+    background: transparent;
+    color: var(--text-subtle);
+  }
+
+  .composerCollapseHandle span {
+    grid-column: 2;
+    width: 48px;
+    height: 4px;
+    justify-self: center;
+    border-radius: 999px;
+    background: var(--border-strong);
+  }
+
+  .composerCollapseHandle svg {
+    grid-column: 3;
+    justify-self: center;
   }
 
   .memorySummaryBox,
@@ -4238,7 +4286,7 @@ textarea:disabled {
 @media (max-width: 920px) {
   .composer {
     display: grid;
-    grid-template-rows: minmax(64px, 1fr) auto;
+    grid-template-rows: 28px minmax(0, 1fr) auto;
     align-content: stretch;
     gap: 8px;
     overflow: hidden;

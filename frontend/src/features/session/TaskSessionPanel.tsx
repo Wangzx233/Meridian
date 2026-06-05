@@ -21,7 +21,6 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  Play,
   Plus,
   RefreshCw,
   Save,
@@ -874,6 +873,7 @@ export function TaskSessionPanel(props: {
             max={composerMaxHeight}
             value={composerHeight}
             onChange={setComposerHeight}
+            onTap={mobileLayout ? () => setComposerCollapsed(true) : undefined}
           />
 
           {composerCollapsed ? (
@@ -884,7 +884,7 @@ export function TaskSessionPanel(props: {
               aria-label={t("session.expandComposer")}
               title={t("session.expandComposer")}
             >
-              <Play size={14} />
+              <ChevronUp size={14} />
               <span>{message.trim() || t("session.instruction")}</span>
               {selectedContextIds.length > 0 ? <strong>{selectedContextIds.length}</strong> : null}
             </button>
@@ -936,7 +936,6 @@ export function TaskSessionPanel(props: {
               onCompact={submitCompact}
               onInterrupt={submitInterrupt}
               interrupting={props.interruptingRun}
-              onCollapse={() => setComposerCollapsed(true)}
             />
           )}
         </section>

@@ -21,7 +21,6 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  Play,
   Plus,
   RefreshCw,
   Save,
@@ -36,8 +35,8 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api";
 import type { AuthSession, CodexReasoningEffort, CodexServiceTier, ContextScope, ContextType, CreateRunInputImage, CreateRunMode, CreateServerRequest, EmailNotificationConfigRequest, ListResponse, MarkDoneRequest, Project, Run, RunnerUpdateProgress, RunnerUpdateProgressResult, Server, Task, WorkbenchNotification } from "../../types";
@@ -1052,16 +1051,80 @@ function MobileWorkspacePicker(props: {
   onClose: () => void;
 }) {
   const { t } = useI18n();
+  const [sheetDrag, setSheetDrag] = useState<{ pointerId: number; startY: number; currentY: number } | null>(null);
+  const ignoreSheetClickRef = useRef(false);
+  const sheetDragOffset = sheetDrag ? Math.max(0, sheetDrag.currentY - sheetDrag.startY) : 0;
+
+  const startSheetDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setSheetDrag({ pointerId: event.pointerId, startY: event.clientY, currentY: event.clientY });
+  };
+
+  const moveSheetDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!sheetDrag || sheetDrag.pointerId !== event.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    setSheetDrag({ ...sheetDrag, currentY: event.clientY });
+  };
+
+  const finishSheetDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!sheetDrag || sheetDrag.pointerId !== event.pointerId) {
+      return;
+    }
+    const totalDrag = event.clientY - sheetDrag.startY;
+    const dragDistance = Math.max(0, totalDrag);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setSheetDrag(null);
+    if (dragDistance > 64 || Math.abs(totalDrag) < 6) {
+      props.onClose();
+      return;
+    }
+    ignoreSheetClickRef.current = true;
+  };
+
+  const cancelSheetDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setSheetDrag(null);
+  };
+
   return (
     <div className="mobileSheetScrim" role="presentation" onMouseDown={props.onClose}>
       <section
-        className="mobileWorkspaceSheet"
+        className={`mobileWorkspaceSheet ${sheetDrag ? "isDragging" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="mobile-workspace-title"
+        style={{ "--sheet-drag-y": `${sheetDragOffset}px` } as CSSProperties}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="mobileSheetHandle" aria-hidden="true" />
+        <button
+          className="mobileSheetHandleButton"
+          type="button"
+          onClick={() => {
+            if (ignoreSheetClickRef.current) {
+              ignoreSheetClickRef.current = false;
+              return;
+            }
+            props.onClose();
+          }}
+          onPointerDown={startSheetDrag}
+          onPointerMove={moveSheetDrag}
+          onPointerUp={finishSheetDrag}
+          onPointerCancel={cancelSheetDrag}
+          aria-label={t("mobile.close")}
+          title={t("mobile.close")}
+        >
+          <span className="mobileSheetHandle" aria-hidden="true" />
+        </button>
         <div className="dialogHeader">
           <div>
             <h2 id="mobile-workspace-title">{t("mobile.switchWorkspace")}</h2>

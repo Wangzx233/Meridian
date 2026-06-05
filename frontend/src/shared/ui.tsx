@@ -40,6 +40,7 @@ export function ResizeHandle(props: {
   max: number;
   value: number;
   onChange: (value: number) => void;
+  onTap?: () => void;
 }) {
   const orientation = props.orientation ?? "vertical";
   const direction = props.direction ?? "previous";
@@ -81,10 +82,15 @@ export function ResizeHandle(props: {
     if (!drag || event.pointerId !== drag.pointerId) {
       return;
     }
+    const position = orientation === "vertical" ? event.clientX : event.clientY;
+    const totalDelta = position - drag.startPosition;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     setDrag(null);
+    if (Math.abs(totalDelta) < 6) {
+      props.onTap?.();
+    }
   };
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {

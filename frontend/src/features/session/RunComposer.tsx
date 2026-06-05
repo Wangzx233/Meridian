@@ -1,6 +1,5 @@
 import {
   CheckCircle2,
-  ChevronDown,
   ClipboardList,
   FileText,
   ImagePlus,
@@ -56,7 +55,6 @@ export function RunComposer(props: {
   onCompact: () => void;
   onInterrupt: () => void;
   interrupting: boolean;
-  onCollapse?: () => void;
 }) {
   const { t } = useI18n();
   const hasObservedSession = Boolean(props.task.codex_session_id || props.runs.some((run) => run.codex_session_id));
@@ -172,18 +170,6 @@ export function RunComposer(props: {
 
   return (
     <form className="composer" onSubmit={props.onSubmit}>
-      {props.onCollapse ? (
-        <button
-          className="composerCollapseHandle"
-          type="button"
-          onClick={props.onCollapse}
-          aria-label={t("session.collapseComposer")}
-          title={t("session.collapseComposer")}
-        >
-          <span aria-hidden="true" />
-          <ChevronDown size={14} />
-        </button>
-      ) : null}
       <div className="composerToolbar">
         <div>
           <label htmlFor="run-message">{t("session.instruction")}</label>

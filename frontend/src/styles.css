@@ -1146,10 +1146,6 @@ summary {
   background: var(--surface);
 }
 
-.composerCollapseHandle {
-  display: none;
-}
-
 .composerToolbar {
   justify-content: space-between;
   gap: 8px;
@@ -3693,7 +3689,7 @@ textarea:disabled {
   }
 
   .primaryWorkspace:not(.composerCollapsed) {
-    grid-template-rows: auto minmax(0, 1fr) 12px clamp(112px, var(--composer-height, 154px), min(300px, 46dvh));
+    grid-template-rows: auto minmax(0, 1fr) 44px clamp(112px, var(--composer-height, 154px), min(300px, 46dvh));
   }
 
   .sidePanel {
@@ -3770,7 +3766,7 @@ textarea:disabled {
 
   .primaryWorkspace > .resizeHandle {
     display: block;
-    min-height: 12px;
+    min-height: 44px;
     background: var(--surface);
   }
 
@@ -3779,7 +3775,7 @@ textarea:disabled {
   }
 
   .primaryWorkspace > .resizeHandle::before {
-    top: 4px;
+    top: 20px;
     height: 4px;
     right: calc(50% - 24px);
     left: calc(50% - 24px);
@@ -3803,33 +3799,6 @@ textarea:disabled {
     padding: 0 10px max(8px, env(safe-area-inset-bottom));
     overflow-y: auto;
     border-top: 0;
-  }
-
-  .composerCollapseHandle {
-    width: 100%;
-    min-height: 28px;
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) 44px;
-    align-items: center;
-    gap: 8px;
-    padding: 0 2px;
-    border: 0;
-    background: transparent;
-    color: var(--text-subtle);
-  }
-
-  .composerCollapseHandle span {
-    grid-column: 2;
-    width: 48px;
-    height: 4px;
-    justify-self: center;
-    border-radius: 999px;
-    background: var(--border-strong);
-  }
-
-  .composerCollapseHandle svg {
-    grid-column: 3;
-    justify-self: center;
   }
 
   .memorySummaryBox,
@@ -3940,6 +3909,13 @@ textarea:disabled {
     border-bottom: 0;
     background: var(--surface);
     box-shadow: 0 -18px 42px rgb(23 32 26 / 22%);
+    transform: translateY(var(--sheet-drag-y, 0));
+    transition: transform 180ms ease;
+    touch-action: pan-y;
+  }
+
+  .mobileWorkspaceSheet.isDragging {
+    transition: none;
   }
 
   .mobileAccordion {
@@ -4286,7 +4262,7 @@ textarea:disabled {
 @media (max-width: 920px) {
   .composer {
     display: grid;
-    grid-template-rows: 28px minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) auto;
     align-content: stretch;
     gap: 8px;
     overflow: hidden;

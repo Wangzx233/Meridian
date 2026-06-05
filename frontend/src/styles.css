@@ -1351,18 +1351,22 @@ textarea:disabled {
 .composerCollapsedBar {
   width: 100%;
   min-height: 34px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: center;
   gap: 7px;
   padding: 0 10px;
   border-right: 0;
   border-bottom: 0;
   border-left: 0;
   border-radius: 0;
-  justify-content: flex-start;
-  text-align: left;
+  justify-content: center;
+  text-align: center;
 }
 
 .composerCollapsedBar span {
   min-width: 0;
+  justify-self: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1374,7 +1378,7 @@ textarea:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-left: auto;
+  justify-self: end;
   border-radius: 999px;
   background: var(--primary);
   color: white;
@@ -3777,8 +3781,8 @@ textarea:disabled {
   .primaryWorkspace > .resizeHandle::before {
     top: 20px;
     height: 4px;
-    right: calc(50% - 24px);
-    left: calc(50% - 24px);
+    right: calc(50% - 16px);
+    left: calc(50% - 16px);
     background: var(--border-strong);
   }
 

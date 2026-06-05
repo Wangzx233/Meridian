@@ -2,6 +2,7 @@ package control
 
 import (
 	"encoding/base64"
+	"fmt"
 	"mime"
 	"path/filepath"
 	"strings"
@@ -25,25 +26,28 @@ func normalizeRunInputImages(images []RunInputImageInput) ([]normalizedRunInputI
 		return nil, nil
 	}
 	if len(images) > maxRunInputImages {
-		return nil, ErrValidation
+		return nil, validationError(fmt.Sprintf("Image input supports up to %d images.", maxRunInputImages))
 	}
 	out := make([]normalizedRunInputImage, 0, len(images))
 	total := 0
 	for index, image := range images {
 		content, err := decodeImageBase64(image.ContentBase64)
 		if err != nil {
-			return nil, ErrValidation
+			return nil, validationError(fmt.Sprintf("Image %d has invalid base64 content.", index+1))
 		}
-		if len(content) == 0 || len(content) > maxRunInputImageBytes {
-			return nil, ErrValidation
+		if len(content) == 0 {
+			return nil, validationError(fmt.Sprintf("Image %d is empty.", index+1))
+		}
+		if len(content) > maxRunInputImageBytes {
+			return nil, validationError(fmt.Sprintf("Image %d is larger than %d MiB.", index+1, maxRunInputImageBytes/(1024*1024)))
 		}
 		total += len(content)
 		if total > maxRunInputImageTotal {
-			return nil, ErrValidation
+			return nil, validationError(fmt.Sprintf("Image inputs are larger than the %d MiB total limit.", maxRunInputImageTotal/(1024*1024)))
 		}
 		mimeType := normalizeImageMimeType(image.MimeType, content)
 		if mimeType == "" {
-			return nil, ErrValidation
+			return nil, validationError(fmt.Sprintf("Image %d must be a PNG, JPEG, GIF, or WebP file.", index+1))
 		}
 		filename := sanitizeInputImageFilename(image.Filename, index, mimeType)
 		out = append(out, normalizedRunInputImage{
@@ -79,13 +83,7 @@ func normalizeImageMimeType(declared string, content []byte) string {
 	if detected == "" {
 		return ""
 	}
-	if declared == "" || declared == "application/octet-stream" || declared == detected {
-		return detected
-	}
-	if declared == "image/jpg" && detected == "image/jpeg" {
-		return detected
-	}
-	return ""
+	return detected
 }
 
 func detectAllowedImageMime(content []byte) string {

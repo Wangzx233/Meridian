@@ -207,6 +207,16 @@ func TestStatusForRunnerErrors(t *testing.T) {
 	}
 }
 
+func TestStatusForValidationMessage(t *testing.T) {
+	status, code, message := statusForError(validationError("Image 1 must be a PNG, JPEG, GIF, or WebP file."))
+	if status != http.StatusBadRequest || code != "validation_error" {
+		t.Fatalf("statusForError(validationError) = (%d, %q), want (400, validation_error)", status, code)
+	}
+	if message != "Image 1 must be a PNG, JPEG, GIF, or WebP file." {
+		t.Fatalf("validation message = %q", message)
+	}
+}
+
 func TestBuildPromptAlwaysIncludesTaskDescription(t *testing.T) {
 	task := Task{Title: "Fix workbench UX", Description: "Make output primary."}
 

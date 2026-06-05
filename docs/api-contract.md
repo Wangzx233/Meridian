@@ -989,6 +989,8 @@ Create-run rules:
 - Creating a run builds and stores `generated_prompt` immediately.
 - `input_images` is optional and supports up to 4 PNG, JPEG, GIF, or WebP
   images. Each image may be up to 8 MiB, with a 24 MiB total per run.
+- `mime_type` is treated as a client hint. The control plane validates the
+  decoded image bytes and stores the detected PNG, JPEG, GIF, or WebP MIME type.
 - Runs with `input_images` require a connected runner that reports
   `codex_image_input`. The control plane stores the image bytes, sends them to
   the runner with the assignment, and the runner invokes Codex CLI with

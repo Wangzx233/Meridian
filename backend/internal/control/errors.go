@@ -19,6 +19,25 @@ var (
 	ErrRunnerRequestTimeout = errors.New("runner_request_timeout")
 )
 
+type validationMessageError struct {
+	message string
+}
+
+func (e validationMessageError) Error() string {
+	return e.message
+}
+
+func (e validationMessageError) Is(target error) bool {
+	return target == ErrValidation
+}
+
+func validationError(message string) error {
+	if message == "" {
+		return ErrValidation
+	}
+	return validationMessageError{message: message}
+}
+
 type APIError struct {
 	Code    string         `json:"code"`
 	Message string         `json:"message"`
@@ -46,6 +65,10 @@ func statusForError(err error) (int, string, string) {
 	case errors.Is(err, ErrNotFound):
 		return http.StatusNotFound, "not_found", "Resource not found."
 	case errors.Is(err, ErrValidation):
+		var validation validationMessageError
+		if errors.As(err, &validation) && validation.message != "" {
+			return http.StatusBadRequest, "validation_error", validation.message
+		}
 		return http.StatusBadRequest, "validation_error", "Request validation failed."
 	case errors.Is(err, ErrInvalidState):
 		return http.StatusConflict, "invalid_state", "Resource is not in a valid state for this operation."

@@ -917,6 +917,9 @@ export function TaskSessionPanel(props: {
               onInputImagesChange={setInputImages}
               canUseImageInput={canUseImageInput}
               imageInputBlockedReason={canUseImageInput ? undefined : imageInputBlockedReason(props.server, t)}
+              onImageInputBlocked={() =>
+                props.onNotice({ tone: "danger", message: imageInputBlockedReason(props.server, t) })
+              }
               disabled={!canSend || props.creatingRun}
               canInterrupt={canInterrupt}
               canCompact={canCompact}

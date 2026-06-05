@@ -42,6 +42,7 @@ export function RunComposer(props: {
   onInputImagesChange: (value: CreateRunInputImage[]) => void;
   canUseImageInput: boolean;
   imageInputBlockedReason?: string;
+  onImageInputBlocked: () => void;
   disabled: boolean;
   canInterrupt: boolean;
   canCompact: boolean;
@@ -66,8 +67,8 @@ export function RunComposer(props: {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const [listening, setListening] = useState(false);
   const speechSupported = typeof window !== "undefined" && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
-  const imageInputDisabled =
-    (props.disabled && !props.canInterrupt) || props.submitting || props.interrupting || !props.canUseImageInput;
+  const composerLocked = (props.disabled && !props.canInterrupt) || props.submitting || props.interrupting;
+  const imageInputDisabled = composerLocked || !props.canUseImageInput;
 
   useEffect(() => {
     messageRef.current = props.message;
@@ -124,8 +125,12 @@ export function RunComposer(props: {
   };
 
   const chooseImages = () => {
-    if (imageInputDisabled) {
+    if (composerLocked) {
       focusInput();
+      return;
+    }
+    if (!props.canUseImageInput) {
+      props.onImageInputBlocked();
       return;
     }
     imageInputRef.current?.click();
@@ -315,7 +320,8 @@ export function RunComposer(props: {
           className="voiceButton"
           type="button"
           onClick={chooseImages}
-          disabled={imageInputDisabled || props.inputImages.length >= maxInputImages}
+          disabled={composerLocked || props.inputImages.length >= maxInputImages}
+          aria-disabled={!props.canUseImageInput}
           title={props.canUseImageInput ? t("composer.imageTitle") : props.imageInputBlockedReason}
         >
           <ImagePlus size={16} />

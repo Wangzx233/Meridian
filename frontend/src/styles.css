@@ -3693,7 +3693,7 @@ textarea:disabled {
   }
 
   .primaryWorkspace:not(.composerCollapsed) {
-    grid-template-rows: auto minmax(0, 1fr) 44px clamp(112px, var(--composer-height, 154px), min(300px, 46dvh));
+    grid-template-rows: auto minmax(0, 1fr) 24px clamp(112px, var(--composer-height, 154px), min(300px, 46dvh));
   }
 
   .sidePanel {
@@ -3770,7 +3770,7 @@ textarea:disabled {
 
   .primaryWorkspace > .resizeHandle {
     display: block;
-    min-height: 44px;
+    min-height: 24px;
     background: var(--surface);
   }
 
@@ -3779,7 +3779,7 @@ textarea:disabled {
   }
 
   .primaryWorkspace > .resizeHandle::before {
-    top: 20px;
+    top: 10px;
     height: 4px;
     right: calc(50% - 16px);
     left: calc(50% - 16px);
@@ -4140,17 +4140,17 @@ textarea:disabled {
     flex: 1;
     min-width: 0;
     display: grid;
-    grid-template-columns: auto minmax(0, 116px);
+    grid-template-columns: minmax(42px, auto) 112px;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     color: var(--text-muted);
     font-size: 11px;
     font-weight: 800;
   }
 
   .mobileWorkspaceToolSelect select {
-    min-height: 28px;
-    padding: 3px 24px 3px 8px;
+    min-height: 32px;
+    padding: 5px 26px 5px 9px;
     font-size: 12px;
     font-weight: 750;
   }
@@ -4182,6 +4182,8 @@ textarea:disabled {
   .outputToolbar {
     align-items: center;
     flex-direction: row;
+    min-height: 36px;
+    justify-content: space-between;
   }
 
   .outputToolbar .markdownSwitch {
@@ -4190,7 +4192,17 @@ textarea:disabled {
 
   .outputToolbar .runPicker {
     width: auto;
-    grid-template-columns: minmax(76px, 108px) auto;
+    grid-template-columns: 112px auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .outputToolbar .runPicker select,
+  .contextScopeFilter select,
+  .mobileWorkspaceToolSelect select {
+    height: 32px;
+    min-height: 32px;
+    line-height: 1.2;
   }
 
   .messageBlock {
@@ -4243,8 +4255,11 @@ textarea:disabled {
   }
 
   .contextToolbar {
-    align-items: stretch;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 112px 44px;
+    align-items: center;
+    gap: 8px;
+    flex-direction: row;
   }
 
   .contextModeTabs {
@@ -4253,6 +4268,7 @@ textarea:disabled {
 
   .contextScopeFilter {
     flex-basis: auto;
+    min-width: 0;
   }
 
   .primaryButton,
@@ -4337,5 +4353,19 @@ textarea:disabled {
   .composerActions .doneButton {
     grid-column: 4;
     grid-row: 1;
+  }
+}
+
+@media (max-width: 380px) {
+  .contextToolbar {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+
+  .contextToolbar .searchBox {
+    grid-column: 1 / -1;
+  }
+
+  .contextScopeFilter {
+    width: 112px;
   }
 }

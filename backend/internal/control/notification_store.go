@@ -315,6 +315,17 @@ func (s *Store) AcknowledgeWorkbenchNotification(ctx context.Context, id string)
 	return scanWorkbenchNotification(row)
 }
 
+func (s *Store) AcknowledgePendingWorkbenchNotifications(ctx context.Context) (int64, error) {
+	tag, err := s.db.Exec(ctx, `
+		UPDATE workbench_notifications
+		SET acknowledged_at=COALESCE(acknowledged_at, now())
+		WHERE acknowledged_at IS NULL AND type <> 'task_done'`)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func normalizeEmailNotificationConfig(in EmailNotificationConfig) (EmailNotificationConfig, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	in.SMTPHost = strings.TrimSpace(in.SMTPHost)

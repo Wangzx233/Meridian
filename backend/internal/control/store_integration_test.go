@@ -643,6 +643,89 @@ func TestCodexReminderNotificationIntegration(t *testing.T) {
 	}
 }
 
+func TestAcknowledgePendingWorkbenchNotificationsIntegration(t *testing.T) {
+	dsn := testDatabaseURL(t)
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect database: %v", err)
+	}
+	defer pool.Close()
+	resetIntegrationDB(t, pool)
+
+	store := NewStore(pool)
+	server, err := store.CreateServer(ctx, CreateServerInput{Name: "desktop", RunnerID: "runner_desktop"})
+	if err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+	project, err := store.CreateProject(ctx, CreateProjectInput{ServerID: server.ID, Name: "workbench", Workdir: "D:\\go\\workplace"})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	for _, title := range []string{"First run notice", "Second run notice"} {
+		task, err := store.CreateTask(ctx, project.ID, CreateTaskInput{Title: title})
+		if err != nil {
+			t.Fatalf("create task: %v", err)
+		}
+		created, err := store.CreateRun(ctx, CreateRunInput{TaskID: task.ID, Message: "run", Mode: "new"})
+		if err != nil {
+			t.Fatalf("create run: %v", err)
+		}
+		if _, err := store.MarkRunStarted(ctx, created.Run.ID, server.RunnerID, time.Now().UTC()); err != nil {
+			t.Fatalf("mark run started: %v", err)
+		}
+		complete, err := store.CompleteRun(ctx, CompleteRunInput{
+			RunID:   created.Run.ID,
+			Status:  RunStatusSucceeded,
+			EndedAt: time.Now().UTC(),
+		})
+		if err != nil {
+			t.Fatalf("complete run: %v", err)
+		}
+		if _, err := store.CreateRunFinishedNotification(ctx, complete.Run); err != nil {
+			t.Fatalf("create run finished notification: %v", err)
+		}
+	}
+
+	taskDone, err := store.CreateTask(ctx, project.ID, CreateTaskInput{Title: "Historical done notice"})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	taskDone, err = store.MarkTaskDone(ctx, taskDone.ID, MarkTaskDoneInput{})
+	if err != nil {
+		t.Fatalf("mark task done: %v", err)
+	}
+	if _, err := store.CreateTaskDoneNotification(ctx, taskDone); err != nil {
+		t.Fatalf("create task done notification: %v", err)
+	}
+
+	count, err := store.AcknowledgePendingWorkbenchNotifications(ctx)
+	if err != nil {
+		t.Fatalf("acknowledge pending notifications: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("acknowledged = %d, want 2", count)
+	}
+	pending, err := store.ListWorkbenchNotifications(ctx, true)
+	if err != nil {
+		t.Fatalf("list pending notifications: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending notifications = %#v, want none", pending)
+	}
+
+	var acknowledgedRunNotices, untouchedTaskDone int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM workbench_notifications WHERE type <> 'task_done' AND acknowledged_at IS NOT NULL`).Scan(&acknowledgedRunNotices); err != nil {
+		t.Fatalf("count acknowledged run notices: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM workbench_notifications WHERE type='task_done' AND acknowledged_at IS NULL`).Scan(&untouchedTaskDone); err != nil {
+		t.Fatalf("count untouched task_done notices: %v", err)
+	}
+	if acknowledgedRunNotices != 2 || untouchedTaskDone != 1 {
+		t.Fatalf("acknowledged run notices = %d, untouched task_done = %d; want 2 and 1", acknowledgedRunNotices, untouchedTaskDone)
+	}
+}
+
 func TestDatabaseEnforcesOneActiveRunPerTaskIntegration(t *testing.T) {
 	dsn := os.Getenv("CTW_TEST_DATABASE_URL")
 	if dsn == "" {

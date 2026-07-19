@@ -20,6 +20,16 @@ func (a *API) handleWorkbenchNotifications(w http.ResponseWriter, r *http.Reques
 
 func (a *API) handleWorkbenchNotificationByID(w http.ResponseWriter, r *http.Request) {
 	rest := trimPrefix(r.URL.Path, "/api/v1/notifications/")
+	if rest == "ack-all" {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		count, err := a.store.AcknowledgePendingWorkbenchNotifications(r.Context())
+		a.respond(w, http.StatusOK, map[string]int64{"acknowledged": count}, err)
+		return
+	}
+
 	parts := splitPath(rest)
 	if len(parts) != 2 || parts[1] != "ack" {
 		writeError(w, http.StatusNotFound, "not_found", "Resource not found.", nil)

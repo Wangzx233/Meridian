@@ -1661,6 +1661,17 @@ textarea:disabled {
   width: min(380px, calc(100vw - 24px));
 }
 
+.notificationHeaderActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.notificationAcknowledgeAllButton span {
+  white-space: nowrap;
+}
+
 .notificationPermissionButton {
   width: 100%;
 }

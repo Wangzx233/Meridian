@@ -298,6 +298,73 @@ func TestMarkDoneDoesNotCreatePendingNotice(t *testing.T) {
 	}
 }
 
+func TestAcknowledgeAllNotificationsRoute(t *testing.T) {
+	dsn := testDatabaseURL(t)
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect database: %v", err)
+	}
+	defer pool.Close()
+	resetIntegrationDB(t, pool)
+
+	store := NewStore(pool)
+	server, err := store.CreateServer(ctx, CreateServerInput{Name: "desktop", RunnerID: "runner_desktop"})
+	if err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+	project, err := store.CreateProject(ctx, CreateProjectInput{ServerID: server.ID, Name: "workbench", Workdir: "D:\\go\\workplace"})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	task, err := store.CreateTask(ctx, project.ID, CreateTaskInput{Title: "Ack all route"})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	created, err := store.CreateRun(ctx, CreateRunInput{TaskID: task.ID, Message: "run", Mode: "new"})
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if _, err := store.MarkRunStarted(ctx, created.Run.ID, server.RunnerID, time.Now().UTC()); err != nil {
+		t.Fatalf("mark run started: %v", err)
+	}
+	complete, err := store.CompleteRun(ctx, CompleteRunInput{
+		RunID:   created.Run.ID,
+		Status:  RunStatusSucceeded,
+		EndedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("complete run: %v", err)
+	}
+	if _, err := store.CreateRunFinishedNotification(ctx, complete.Run); err != nil {
+		t.Fatalf("create notification: %v", err)
+	}
+
+	api := NewAPI(store, nil, AuthConfig{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/ack-all", http.NoBody)
+	api.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Acknowledged int64 `json:"acknowledged"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Acknowledged != 1 {
+		t.Fatalf("acknowledged = %d, want 1", response.Acknowledged)
+	}
+	items, err := store.ListWorkbenchNotifications(ctx, true)
+	if err != nil {
+		t.Fatalf("list pending notifications: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("pending notifications = %#v, want none", items)
+	}
+}
+
 func TestMarkDoneStoresStructuredMemory(t *testing.T) {
 	dsn := testDatabaseURL(t)
 	ctx := context.Background()

@@ -650,12 +650,27 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
     onError: (error) => setNotice(errorNotice(error, t("app.notificationUpdateFailed"))),
   });
 
+  const acknowledgeAllNotificationsMutation = useMutation({
+    mutationFn: api.acknowledgeAllWorkbenchNotifications,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workbench-notifications", "pending"] });
+    },
+    onError: (error) => setNotice(errorNotice(error, t("app.notificationUpdateFailed"))),
+  });
+
   const refreshAll = () => {
     void queryClient.invalidateQueries();
   };
 
   const acknowledgeNotification = (notificationId: string) => {
     acknowledgeNotificationMutation.mutate(notificationId);
+  };
+
+  const acknowledgeAllNotifications = () => {
+    if (workbenchNotifications.length === 0) {
+      return;
+    }
+    acknowledgeAllNotificationsMutation.mutate();
   };
 
   const openNotificationTarget = (notification: WorkbenchNotification) => {
@@ -751,10 +766,11 @@ export function WorkbenchApp(props: { session: AuthSession; onLogout: () => void
               <NotificationPopover
                 notifications={workbenchNotifications}
                 state={queryState(workbenchNotificationsQuery)}
-                acknowledging={acknowledgeNotificationMutation.isPending}
+                acknowledging={acknowledgeNotificationMutation.isPending || acknowledgeAllNotificationsMutation.isPending}
                 browserPermission={browserNotificationPermission}
                 onOpenNotification={openNotificationTarget}
                 onAcknowledge={acknowledgeNotification}
+                onAcknowledgeAll={acknowledgeAllNotifications}
                 onEnableBrowserNotifications={enableBrowserNotifications}
                 onClose={() => setNotificationsOpen(false)}
               />

@@ -48,6 +48,7 @@ export function NotificationPopover(props: {
   browserPermission: NotificationPermission;
   onOpenNotification: (notification: WorkbenchNotification) => void;
   onAcknowledge: (notificationId: string) => void;
+  onAcknowledgeAll: () => void;
   onEnableBrowserNotifications: () => void;
   onClose: () => void;
 }) {
@@ -81,9 +82,21 @@ export function NotificationPopover(props: {
             <p>{props.notifications.length} awaiting confirmation</p>
           </div>
         </div>
-        <button className="iconButton" type="button" onClick={props.onClose} aria-label="Close notifications">
-          <X size={16} />
-        </button>
+        <div className="notificationHeaderActions">
+          <button
+            className="ghostButton compact notificationAcknowledgeAllButton"
+            type="button"
+            onClick={props.onAcknowledgeAll}
+            disabled={props.acknowledging || props.notifications.length === 0}
+            title="Mark all read"
+          >
+            {props.acknowledging ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
+            <span>Mark all read</span>
+          </button>
+          <button className="iconButton" type="button" onClick={props.onClose} aria-label="Close notifications">
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
       {browserSupported && props.browserPermission !== "granted" ? (

@@ -848,6 +848,7 @@ Rules:
 
 ```text
 GET  /api/v1/notifications?pending=true
+POST /api/v1/notifications/ack-all
 POST /api/v1/notifications/{notification_id}/ack
 ```
 
@@ -887,6 +888,8 @@ Rules:
 - Pending notification queries exclude `task_done`; that type is retained only
   for historical records.
 - Opening or dismissing a notification should call the acknowledge endpoint.
+- The bulk acknowledge endpoint marks all currently pending non-`task_done`
+  notifications as acknowledged and returns `{ "acknowledged": count }`.
 - Acknowledged notifications remain stored but are hidden from the normal
   pending notice tray.
 

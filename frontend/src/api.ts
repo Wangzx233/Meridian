@@ -250,6 +250,8 @@ export const api = {
     request<ListResponse<WorkbenchNotification>>(`/notifications${queryString({ pending: pending ? "true" : "false" })}`).then(normalizeList),
   acknowledgeWorkbenchNotification: (notificationId: string) =>
     request<WorkbenchNotification>(`/notifications/${encodeURIComponent(notificationId)}/ack`, { method: "POST" }),
+  acknowledgeAllWorkbenchNotifications: () =>
+    request<{ acknowledged: number }>("/notifications/ack-all", { method: "POST" }),
 
   listRuns: (taskId: string) =>
     request<ListResponse<Run>>(`/tasks/${encodeURIComponent(taskId)}/runs`).then(normalizeList),
